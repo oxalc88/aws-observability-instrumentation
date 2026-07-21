@@ -6,6 +6,78 @@ The policy is language agnostic. TypeScript is the canonical Node.js implementat
 
 This project is based on [Sentry Instrumentation](https://github.com/tortastudios/sentry-instrumentation), a skill that standardizes how application observability is instrumented. Credit for the contract-first approach and guidance on what to measure goes to the team at [Torta Studios](https://tortastudios.com/).
 
+## Quick start
+
+### One-command install (all agents except Claude.ai web)
+
+```bash
+git clone https://github.com/oxalc88/aws-observability-instrumentation.git
+cd aws-observability-instrumentation
+scripts/install.sh --agent=<agent> --project=/path/to/your/project
+```
+
+`<agent>` is one of `claude-code`, `cursor`, `codex`, `aider`, `continue`, or `windsurf`. The installer is idempotent, so it can be run again after updating this clone. For Claude Code, omit `--project` to install for the current user under `~/.claude/skills/`.
+
+Keep this skill in a separate clone instead of nesting its Git repository inside the application repository.
+
+### Pin a version
+
+Check out a release tag before running the installer to keep the project on a stable skill contract:
+
+```bash
+git clone https://github.com/oxalc88/aws-observability-instrumentation.git
+cd aws-observability-instrumentation
+git checkout v0.1.0
+scripts/install.sh --agent=<agent> --project=/path/to/your/project
+```
+
+Available releases can be listed with:
+
+```bash
+git ls-remote --tags https://github.com/oxalc88/aws-observability-instrumentation.git
+```
+
+### Pick your agent
+
+| Agent           | Install guide                                            |
+| --------------- | -------------------------------------------------------- |
+| Claude Code     | [`adapters/claude-code.md`](adapters/claude-code.md)     |
+| Claude.ai (web) | [`adapters/claude-ai-web.md`](adapters/claude-ai-web.md) |
+| Cursor          | [`adapters/cursor.md`](adapters/cursor.md)               |
+| Codex           | [`adapters/codex.md`](adapters/codex.md)                 |
+| Aider           | [`adapters/aider.md`](adapters/aider.md)                 |
+| Continue        | [`adapters/continue.md`](adapters/continue.md)           |
+| Windsurf        | [`adapters/windsurf.md`](adapters/windsurf.md)           |
+
+Each guide explains what the installer writes, how the agent loads the skill, and how to verify the installation.
+
+### Try the skill
+
+Paste any of these prompts into your agent:
+
+```text
+Add CloudWatch-compatible OpenTelemetry instrumentation to the new /users
+endpoint, including governed metrics, a trace, and a correlated structured
+outcome log.
+
+Instrument the external Stripe client with the standard triad
+(count + duration + failure) and the matching dependency span.
+
+Add a fallback metric and correlated failure log for the case where the LLM
+response parse fails.
+
+This workflow step has no instrumentation. Apply the matching TypeScript or
+Python workflow pattern and add the required MetricDef and LogEventDef entries.
+
+Review this PR for metrics, tracing, logging, privacy, and cardinality quality
+against the skill's review rubric.
+
+Port the instrumentation layer from our Python service to our TypeScript
+service with the same signal contracts and idiomatic language APIs.
+```
+
+The agent will read `SKILL.md`, select the matching runtime and signal paths, use the governed definitions and surface patterns, and produce code that passes the policy gate.
+
 ## What it covers
 
 - OpenTelemetry metric names, units, histogram boundaries, attributes, and lifecycle rules.
@@ -265,16 +337,6 @@ python examples/python/ci_gate.py examples/typescript/src examples/python config
 ```
 
 The gate blocks direct OTel instrument creation outside the emission module, direct `PutMetricData`, hardcoded regional endpoints in application source, unbounded identifiers, exception text on metrics, wall-clock duration timing, loop emission, duplicate metric names, incorrect Lambda lifecycle, raw console/print logging, sensitive log content, and raw payload/error logging.
-
-## Agent installation
-
-From this local clone:
-
-```bash
-scripts/install.sh --agent=<agent> --project=/path/to/project
-```
-
-Supported adapter names are `claude-code`, `cursor`, `codex`, `aider`, `continue`, and `windsurf`. See [`adapters/README.md`](adapters/README.md).
 
 ## Roadmap
 
