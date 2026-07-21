@@ -2,7 +2,7 @@
 
 A Node.js-first coding skill for three-pillar observability in Amazon CloudWatch: governed native OpenTelemetry metrics, OpenTelemetry traces, and secure structured application logs. It preserves the original repository's contract-first approach while replacing Sentry-specific APIs with standard OTel SDKs, AWS-supported collection, PromQL-aware metrics, and AWS/OWASP-aligned logging.
 
-The policy is language agnostic. TypeScript is the canonical implementation; Python examples prove that the same contracts can be applied across languages.
+The policy is language agnostic. TypeScript is the canonical Node.js implementation; Python maintains behavioral parity for the core metric, logging, tracing, Lambda lifecycle, and SQS contracts. Transport-specific coverage that is not yet at parity is listed in the roadmap.
 
 This project is based on [Sentry Instrumentation](https://github.com/tortastudios/sentry-instrumentation), a skill that standardizes how application observability is instrumented. Credit for the contract-first approach and guidance on what to measure goes to the team at [Torta Studios](https://tortastudios.com/).
 
@@ -123,21 +123,39 @@ cloudwatch-instrumentation/
 |  |- tagging-and-cardinality.md
 |  `- ...governance and review references
 |- examples/
-|  |- typescript/                 # canonical Node.js implementation
+|  |- typescript/                 # TypeScript reference implementation
 |  |  |- src/telemetry.ts
 |  |  |- src/metric-def.ts
 |  |  |- src/metric-emitter.ts
 |  |  |- src/log-event.ts
 |  |  |- src/structured-logger.ts
-|  |  |- src/workflow-propagation.ts
+|  |  |- src/correlation-context.ts
+|  |  |- src/failure-taxonomy.ts
 |  |  |- src/http.ts
+|  |  |- src/workflow.ts
+|  |  |- src/lambda-bootstrap.ts
 |  |  |- src/lambda-handler.ts
+|  |  |- src/workflow-propagation.ts
+|  |  |- src/sqs-workflow.ts
 |  |  |- src/sqs-lambda-handler.ts
+|  |  |- src/kinesis-workflow.ts    # TypeScript only; Python is on the roadmap
 |  |  `- src/kinesis-lambda-handler.ts
-|  `- python/                     # secondary cross-language implementation
+|  `- python/                     # Core-contract and SQS parity
+|     |- emission_module.py
+|     |- metric_def.py
+|     |- metric_tags.py
+|     |- structured_logging.py
 |     |- correlation_context.py
+|     |- failure_taxonomy.py
+|     |- http_middleware.py
+|     |- workflow_decorator.py
+|     |- lambda_handler.py
 |     |- sqs_workflow.py
-|     `- sqs_lambda_handler.py
+|     |- sqs_lambda_handler.py
+|     |- external_api_client.py
+|     |- retry_loop.py
+|     |- fallback_path.py
+|     `- ai_agent_spans.py
 |- config/
 |  |- otel-collector-cloudwatch.yaml
 |  |- otel-collector-cloudwatch-three-signals.yaml
