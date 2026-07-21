@@ -1,77 +1,69 @@
-"""`MetricDef` schema + five ergonomic classmethods.
+"""Governed OpenTelemetry metric definitions.
 
-Drop-in at `yourapp/shared/metrics.py`. This example reproduces the
-shape of a governed metric registry: schema at the top, metric
-definitions (or an initially-empty `REGISTRY` list) below.
-
-The constructors fix `kind`/`unit`/`purpose` so call sites only state
-the knobs that matter per metric class. Identity is name-based so
-registries dedupe as sets, and `Mapping[str, …]` fields for
-`tag_constraints` don't need to be hashable.
-
-See also:
-  - `metric_tags.py`    — bucket functions referenced by `tag_constraints`
-  - `failure_taxonomy.py` — `FailureClass` taxonomy
-  - `emission_module.py` — validating emit helpers that consume `MetricDef`
+Copy this module into the consumer project's shared observability package.
+Create OTel instruments from these definitions only in the emission module.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 
-MetricKind = Literal["counter", "gauge", "distribution"]
+MetricKind = Literal["counter", "gauge", "histogram"]
 MetricPurpose = Literal["outcome", "latency", "load", "resource", "correctness"]
 EmitFrequency = Literal["per_request", "per_step", "per_event", "periodic"]
 LoopPolicy = Literal["forbidden", "aggregate_only", "allowed"]
 Cardinality = Literal["low", "medium"]
-TagConstraint = frozenset[str] | str  # `str` = name of a bucket function
+AttributeConstraint = frozenset[str] | str
+
+_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.\-/]{0,254}$")
 
 
 @dataclass(frozen=True, eq=False)
 class MetricDef:
-    """Governed definition of a single metric.
+    """Immutable contract for one custom OTel metric instrument."""
 
-    Construct via the classmethods (`counter`, `latency`, `gauge`,
-    `resource`, `failure_counter`) — they fill in kind/unit/purpose.
-
-    Identity tuple `(name, kind, unit, purpose, allowed_tags,
-    tag_constraints)` is immutable once published. Changing any of
-    those fields requires a new versioned name.
-
-    Equality + hashing are name-based so two `MetricDef`s with the
-    same name dedupe in a set, and `Mapping`-typed fields don't
-    break hashability.
-    """
-
-    # --- identity (immutable under the same name) ---
     name: str
     kind: MetricKind
     unit: str
     purpose: MetricPurpose
-
-    # --- tagging ---
-    allowed_tags: frozenset[str]
-    tag_constraints: Mapping[str, TagConstraint]
+    description: str
+    allowed_attributes: frozenset[str]
+    required_attributes: frozenset[str]
+    attribute_constraints: Mapping[str, AttributeConstraint]
     cardinality: Cardinality
-
-    # --- cost model ---
     emit_frequency: EmitFrequency
-    sampling_rate: float = 1.0
-    max_rate_hz: float | None = None
+    histogram_boundaries: tuple[float, ...] = ()
     loop_policy: LoopPolicy = "aggregate_only"
-
-    # --- operational + ownership ---
-    operational_meaning: str = ""
     owner: str = ""
-
-    # --- lifecycle ---
     version: int = 1
     deprecated: bool = False
     replaced_by: str | None = None
     retired_at: date | None = None
+
+    def __post_init__(self) -> None:
+        if not _NAME.fullmatch(self.name):
+            raise ValueError(f"invalid OTel metric name: {self.name!r}")
+        if not self.description.strip():
+            raise ValueError(f"metric {self.name!r} requires a description")
+        if not self.unit.strip():
+            raise ValueError(f"metric {self.name!r} requires a UCUM unit")
+        if not self.required_attributes <= self.allowed_attributes:
+            raise ValueError("required_attributes must be a subset of allowed_attributes")
+        if frozenset(self.attribute_constraints) != self.allowed_attributes:
+            raise ValueError("attribute_constraints must define every allowed attribute")
+        if self.kind == "histogram":
+            if not self.histogram_boundaries:
+                raise ValueError("histograms require explicit boundaries")
+            if tuple(sorted(set(self.histogram_boundaries))) != self.histogram_boundaries:
+                raise ValueError("histogram boundaries must be unique and ascending")
+        elif self.histogram_boundaries:
+            raise ValueError("only histograms may define histogram_boundaries")
+        if self.deprecated and self.replaced_by is None and self.retired_at is None:
+            raise ValueError("deprecated metrics require replaced_by or retired_at")
 
     def __hash__(self) -> int:
         return hash(self.name)
@@ -81,8 +73,6 @@ class MetricDef:
             return NotImplemented
         return self.name == other.name
 
-    # ---- ergonomic constructors ------------------------------------------
-
     @classmethod
     def counter(
         cls,
@@ -91,10 +81,10 @@ class MetricDef:
         purpose: MetricPurpose,
         owner: str,
         means: str,
-        tags: Mapping[str, TagConstraint] | None = None,
+        unit: str = "{event}",
+        attributes: Mapping[str, AttributeConstraint] | None = None,
+        required: frozenset[str] = frozenset(),
         emit_frequency: EmitFrequency = "per_event",
-        sampling_rate: float = 1.0,
-        max_rate_hz: float | None = None,
         loop_policy: LoopPolicy = "aggregate_only",
         cardinality: Cardinality = "low",
         version: int = 1,
@@ -102,17 +92,25 @@ class MetricDef:
         replaced_by: str | None = None,
         retired_at: date | None = None,
     ) -> MetricDef:
-        """Monotonic counter (`kind="counter"`, `unit="count"`)."""
+        """Create a monotonic counter for additive non-negative values."""
 
-        tag_constraints = dict(tags or {})
+        constraints = dict(attributes or {})
         return cls(
-            name=name, kind="counter", unit="count", purpose=purpose,
-            allowed_tags=frozenset(tag_constraints),
-            tag_constraints=tag_constraints, cardinality=cardinality,
-            emit_frequency=emit_frequency, sampling_rate=sampling_rate,
-            max_rate_hz=max_rate_hz, loop_policy=loop_policy,
-            operational_meaning=means, owner=owner, version=version,
-            deprecated=deprecated, replaced_by=replaced_by,
+            name=name,
+            kind="counter",
+            unit=unit,
+            purpose=purpose,
+            description=means,
+            allowed_attributes=frozenset(constraints),
+            required_attributes=required,
+            attribute_constraints=constraints,
+            cardinality=cardinality,
+            emit_frequency=emit_frequency,
+            loop_policy=loop_policy,
+            owner=owner,
+            version=version,
+            deprecated=deprecated,
+            replaced_by=replaced_by,
             retired_at=retired_at,
         )
 
@@ -123,10 +121,22 @@ class MetricDef:
         *,
         owner: str,
         means: str,
-        tags: Mapping[str, TagConstraint] | None = None,
+        attributes: Mapping[str, AttributeConstraint] | None = None,
+        required: frozenset[str] = frozenset(),
+        boundaries_seconds: tuple[float, ...] = (
+            0.005,
+            0.01,
+            0.025,
+            0.05,
+            0.1,
+            0.25,
+            0.5,
+            1.0,
+            2.5,
+            5.0,
+            10.0,
+        ),
         emit_frequency: EmitFrequency = "per_event",
-        sampling_rate: float = 1.0,
-        max_rate_hz: float | None = None,
         loop_policy: LoopPolicy = "aggregate_only",
         cardinality: Cardinality = "low",
         version: int = 1,
@@ -134,17 +144,26 @@ class MetricDef:
         replaced_by: str | None = None,
         retired_at: date | None = None,
     ) -> MetricDef:
-        """Sampled duration (`kind="distribution"`, `unit="ms"`)."""
+        """Create a duration histogram measured in seconds."""
 
-        tag_constraints = dict(tags or {})
+        constraints = dict(attributes or {})
         return cls(
-            name=name, kind="distribution", unit="ms", purpose="latency",
-            allowed_tags=frozenset(tag_constraints),
-            tag_constraints=tag_constraints, cardinality=cardinality,
-            emit_frequency=emit_frequency, sampling_rate=sampling_rate,
-            max_rate_hz=max_rate_hz, loop_policy=loop_policy,
-            operational_meaning=means, owner=owner, version=version,
-            deprecated=deprecated, replaced_by=replaced_by,
+            name=name,
+            kind="histogram",
+            unit="s",
+            purpose="latency",
+            description=means,
+            allowed_attributes=frozenset(constraints),
+            required_attributes=required,
+            attribute_constraints=constraints,
+            cardinality=cardinality,
+            emit_frequency=emit_frequency,
+            histogram_boundaries=boundaries_seconds,
+            loop_policy=loop_policy,
+            owner=owner,
+            version=version,
+            deprecated=deprecated,
+            replaced_by=replaced_by,
             retired_at=retired_at,
         )
 
@@ -156,28 +175,34 @@ class MetricDef:
         unit: str,
         owner: str,
         means: str,
-        tags: Mapping[str, TagConstraint] | None = None,
+        attributes: Mapping[str, AttributeConstraint] | None = None,
+        required: frozenset[str] = frozenset(),
         emit_frequency: EmitFrequency = "periodic",
-        sampling_rate: float = 1.0,
-        max_rate_hz: float | None = None,
-        loop_policy: LoopPolicy = "aggregate_only",
         cardinality: Cardinality = "low",
         version: int = 1,
         deprecated: bool = False,
         replaced_by: str | None = None,
         retired_at: date | None = None,
     ) -> MetricDef:
-        """Current-state gauge (`kind="gauge"`, `purpose="load"`)."""
+        """Create a synchronous gauge for current state."""
 
-        tag_constraints = dict(tags or {})
+        constraints = dict(attributes or {})
         return cls(
-            name=name, kind="gauge", unit=unit, purpose="load",
-            allowed_tags=frozenset(tag_constraints),
-            tag_constraints=tag_constraints, cardinality=cardinality,
-            emit_frequency=emit_frequency, sampling_rate=sampling_rate,
-            max_rate_hz=max_rate_hz, loop_policy=loop_policy,
-            operational_meaning=means, owner=owner, version=version,
-            deprecated=deprecated, replaced_by=replaced_by,
+            name=name,
+            kind="gauge",
+            unit=unit,
+            purpose="load",
+            description=means,
+            allowed_attributes=frozenset(constraints),
+            required_attributes=required,
+            attribute_constraints=constraints,
+            cardinality=cardinality,
+            emit_frequency=emit_frequency,
+            loop_policy="aggregate_only",
+            owner=owner,
+            version=version,
+            deprecated=deprecated,
+            replaced_by=replaced_by,
             retired_at=retired_at,
         )
 
@@ -189,10 +214,9 @@ class MetricDef:
         unit: str,
         owner: str,
         means: str,
-        tags: Mapping[str, TagConstraint] | None = None,
+        attributes: Mapping[str, AttributeConstraint] | None = None,
+        required: frozenset[str] = frozenset(),
         emit_frequency: EmitFrequency = "per_event",
-        sampling_rate: float = 1.0,
-        max_rate_hz: float | None = None,
         loop_policy: LoopPolicy = "aggregate_only",
         cardinality: Cardinality = "low",
         version: int = 1,
@@ -200,21 +224,22 @@ class MetricDef:
         replaced_by: str | None = None,
         retired_at: date | None = None,
     ) -> MetricDef:
-        """Resource-consumption counter (`purpose="resource"`).
+        """Create a counter for bytes, tokens, quota units, or similar use."""
 
-        For quota units, token counts, bytes — amounts consumed per
-        unit work. `unit` is mandatory.
-        """
-
-        tag_constraints = dict(tags or {})
-        return cls(
-            name=name, kind="counter", unit=unit, purpose="resource",
-            allowed_tags=frozenset(tag_constraints),
-            tag_constraints=tag_constraints, cardinality=cardinality,
-            emit_frequency=emit_frequency, sampling_rate=sampling_rate,
-            max_rate_hz=max_rate_hz, loop_policy=loop_policy,
-            operational_meaning=means, owner=owner, version=version,
-            deprecated=deprecated, replaced_by=replaced_by,
+        return cls.counter(
+            name,
+            purpose="resource",
+            owner=owner,
+            means=means,
+            unit=unit,
+            attributes=attributes,
+            required=required,
+            emit_frequency=emit_frequency,
+            loop_policy=loop_policy,
+            cardinality=cardinality,
+            version=version,
+            deprecated=deprecated,
+            replaced_by=replaced_by,
             retired_at=retired_at,
         )
 
@@ -225,10 +250,9 @@ class MetricDef:
         *,
         owner: str,
         means: str,
-        tags: Mapping[str, TagConstraint] | None = None,
+        attributes: Mapping[str, AttributeConstraint] | None = None,
+        required: frozenset[str] = frozenset(),
         emit_frequency: EmitFrequency = "per_event",
-        sampling_rate: float = 1.0,
-        max_rate_hz: float | None = None,
         loop_policy: LoopPolicy = "aggregate_only",
         cardinality: Cardinality = "low",
         version: int = 1,
@@ -236,39 +260,35 @@ class MetricDef:
         replaced_by: str | None = None,
         retired_at: date | None = None,
     ) -> MetricDef:
-        """Failure-outcome counter; always tags with `failure_class`.
-
-        Guarantees `"failure_class"` is in `allowed_tags`, defaulting
-        its constraint to the full `FailureClass` taxonomy. Callers
-        who pass a tighter `failure_class` constraint win.
-        """
+        """Create a counter that always requires bounded `failure.class`."""
 
         from .failure_taxonomy import FailureClass
 
-        tag_constraints: dict[str, TagConstraint] = dict(tags or {})
-        tag_constraints.setdefault(
-            "failure_class",
-            frozenset(item.value for item in FailureClass),
+        constraints = dict(attributes or {})
+        constraints.setdefault(
+            "failure.class", frozenset(item.value for item in FailureClass)
         )
-        return cls(
-            name=name, kind="counter", unit="count", purpose="outcome",
-            allowed_tags=frozenset(tag_constraints),
-            tag_constraints=tag_constraints, cardinality=cardinality,
-            emit_frequency=emit_frequency, sampling_rate=sampling_rate,
-            max_rate_hz=max_rate_hz, loop_policy=loop_policy,
-            operational_meaning=means, owner=owner, version=version,
-            deprecated=deprecated, replaced_by=replaced_by,
+        return cls.counter(
+            name,
+            purpose="outcome",
+            owner=owner,
+            means=means,
+            attributes=constraints,
+            required=frozenset((*required, "failure.class")),
+            emit_frequency=emit_frequency,
+            loop_policy=loop_policy,
+            cardinality=cardinality,
+            version=version,
+            deprecated=deprecated,
+            replaced_by=replaced_by,
             retired_at=retired_at,
         )
 
 
-# Registry used by tests + the CI gate to enforce uniqueness and
-# lifecycle rules. Populate with `MetricDef` instances at module
-# scope below, then reference the symbol from call sites.
 REGISTRY: list[MetricDef] = []
 
-
 __all__ = [
+    "AttributeConstraint",
     "Cardinality",
     "EmitFrequency",
     "LoopPolicy",
@@ -276,5 +296,4 @@ __all__ = [
     "MetricKind",
     "MetricPurpose",
     "REGISTRY",
-    "TagConstraint",
 ]
