@@ -1,100 +1,37 @@
-# Agents guide — sentry-instrumentation
+# Agents guide - cloudwatch-instrumentation
 
-## What this repo is
+## Repository purpose
 
-`sentry-instrumentation` is an **Anthropic-format skill**: a set of rules,
-references, and drop-in code patterns that teach AI coding agents how to
-add Sentry instrumentation the right way — both **metrics** (counter /
-gauge / distribution, duration, failure, resource) and **tracing** (the
-`gen_ai.*` spans for AI agent conversations). The canonical reference
-ships in Python under `examples/python/`, but the patterns are
-language-neutral and port to TypeScript, Go, Ruby, etc. The skill is
-production-tested at Torta Studios.
+This repository is an agent skill for adding governed OpenTelemetry metrics and traces plus secure structured logging for Amazon CloudWatch. It is not an application. TypeScript under `examples/typescript/` is the canonical Node.js reference; Python under `examples/python/` is a secondary executable port.
 
-This is not an application. There is nothing to run from this repo — it
-is installed *into* consumer projects so that an AI agent working in
-those projects reads its rules.
+## Editing rules
 
-## This repo has no "skill registry"
+- Preserve vendor-neutral OTel instrumentation in application code.
+- Keep CloudWatch endpoints, SigV4, bearer tokens, batching, and retries in deployment configuration.
+- Prefer platform delivery for governed JSON logs on Lambda/Fargate. Use an OTel log bridge only deliberately, and never duplicate records across both paths.
+- Apply AWS Well-Architected and OWASP logging guidance: schemas, correlation, sanitization, data minimization, security-event coverage, sink failure isolation, access, and retention.
+- Distinguish native CloudWatch OTLP/PromQL metrics from classic CloudWatch/EMF metrics.
+- Cover ECS/Fargate and Lambda behavior when changing runtime guidance. Also consider EKS, EC2, App Runner, local development, and on-premises collection.
+- Prefer official AWS and OpenTelemetry documentation for compatibility claims. Mark preview behavior and time-sensitive limits.
+- Update the matching reference, example, tests, and adapter whenever a public rule changes.
+- Run the TypeScript type check/tests and Python gate/tests before committing.
 
-There is no cross-agent "skill registry file" standard. Each supported
-agent discovers skills its own way:
-
-| Agent | Discovery file |
-|---|---|
-| Claude Code | `SKILL.md` YAML frontmatter under `~/.claude/skills/` or `.claude/skills/` |
-| Claude.ai (web) | `SKILL.md` YAML frontmatter uploaded via Settings → Skills |
-| Codex | `AGENTS.md` at project root |
-| Cursor | `.cursor/rules/*.mdc` |
-| Aider | `CONVENTIONS.md` (or any file passed via `--read`) |
-| Continue | `.continuerules` |
-| Windsurf | `.windsurfrules` |
-
-The install shape for each agent lives under `adapters/<agent>.md`. The
-matrix is in [`adapters/README.md`](adapters/README.md).
-
-## If you're a Codex agent asked to install this skill
-
-One command, from inside the cloned skill repo:
-
-```bash
-scripts/install.sh --agent=codex --project=/path/to/consumer/project
-```
-
-That appends the **Skill-enable block** below into the consumer project's
-`AGENTS.md`, bracketed by marker comments so re-runs update in place.
-
-If you prefer to do it by hand, copy the block below into the consumer
-project's `AGENTS.md`, and adjust the paths to point at the cloned skill
-on disk.
-
-## Skill-enable block (copy into consumer `AGENTS.md`)
+## Skill-enable block
 
 ```markdown
-<!-- BEGIN sentry-instrumentation -->
-## Sentry instrumentation
+<!-- BEGIN cloudwatch-instrumentation -->
 
-This project uses the `sentry-instrumentation` skill. When writing code
-that emits a Sentry metric, measures duration, counts failures, wraps a
-workflow step, adds a retry or fallback path, or instruments an AI agent
-/ LLM call / tool call / conversation:
+## CloudWatch OpenTelemetry instrumentation
+
+Use the `cloudwatch-instrumentation` skill for metrics, traces, structured logs, collectors, PromQL, Logs Insights, and AWS runtime telemetry.
 
 1. Read `<path-to-skill>/SKILL.md`.
-2. Follow its decision rules and surface patterns.
-3. For deeper rules (tagging, cost model, lifecycle, AI agent
-   conversations), open the relevant file under
-   `<path-to-skill>/references/`.
-4. Use `<path-to-skill>/examples/python/` as the canonical drop-in
-   reference.
+2. Select native OTLP/PromQL or classic/EMF before writing instrumentation.
+3. Read `<path-to-skill>/references/deployment-targets.md` for Fargate, Lambda, EKS, EC2, App Runner, or non-AWS topology.
+4. Read `<path-to-skill>/references/structured-logging.md` before adding application logs.
+5. Use `<path-to-skill>/examples/typescript/` for Node.js/TypeScript or `<path-to-skill>/examples/python/` for Python.
 
-Never hand-roll emissions — use the surface patterns (middleware,
-decorator, base class). Never pass a raw string to an emit helper. For
-AI agents, use `gen_ai.*` spans and set `gen_ai.conversation.id` per
-turn — keep the conversation id and message bodies on span attributes,
-never on a metric tag.
-<!-- END sentry-instrumentation -->
+Never put raw identifiers, URLs, exception messages, or message bodies in metric attributes. Never log credentials, session values, bodies, prompts, or raw errors. Never hand-roll SigV4 in application instrumentation when a supported agent, ADOT SDK, or collector can own export.
+
+<!-- END cloudwatch-instrumentation -->
 ```
-
-Replace `<path-to-skill>` with wherever the skill is cloned on disk
-(typical: `.agents/skills/sentry-instrumentation/` inside the consumer
-project, or an absolute path under `~/`). The install script resolves
-this automatically.
-
-## Other agents
-
-- **Claude Code** — `scripts/install.sh --agent=claude-code` symlinks
-  this repo into `~/.claude/skills/` (or `.claude/skills/` with
-  `--project=<path>`). See [`adapters/claude-code.md`](adapters/claude-code.md).
-- **Claude.ai (web)** — not scriptable; upload via Settings → Skills.
-  See [`adapters/claude-ai-web.md`](adapters/claude-ai-web.md).
-- **Cursor / Aider / Continue / Windsurf** — `scripts/install.sh
-  --agent=<name> --project=<path>` writes the rules file each agent
-  discovers. See the matching `adapters/<agent>.md`.
-
-## Why the installer exists
-
-The rules file most non-Anthropic agents expect is a single concatenated
-blob (`SKILL.md` plus a handful of high-value references). Doing that by
-hand works once — every skill update then requires re-running a fragile
-`cat` pipeline. `scripts/install.sh` is idempotent: re-running after an
-upstream update refreshes the install in place.

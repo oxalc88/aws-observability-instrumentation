@@ -1,184 +1,115 @@
-# Signal model — the `MetricDef` schema
+# Signal model
 
-Every metric is a frozen `MetricDef` instance carrying the metadata
-required to interpret, validate, govern, and cost it.
+Define every custom metric and structured event once. These registries are design contracts and the source for runtime validation, SDK views, review, and CI.
 
-## Fields
+## MetricDef
 
-```python
-@dataclass(frozen=True, eq=False)
-class MetricDef:
-    # --- identity (immutable under the same name) ---
-    name: str                        # dotted identifier, unique
-    kind: Literal["counter", "gauge", "distribution"]
-    unit: str                        # "ms", "bytes", "tokens", "count", "none"
-    purpose: Literal["outcome", "latency", "load", "resource", "correctness"]
-
-    # --- tagging ---
-    allowed_tags: frozenset[str]
-    tag_constraints: Mapping[str, frozenset[str] | str]
-    cardinality: Literal["low", "medium"]
-
-    # --- cost model ---
-    emit_frequency: Literal["per_request", "per_step", "per_event", "periodic"]
-    sampling_rate: float = 1.0
-    max_rate_hz: float | None = None
-    loop_policy: Literal["forbidden", "aggregate_only", "allowed"] = "aggregate_only"
-
-    # --- operational + ownership ---
-    operational_meaning: str
-    owner: str
-
-    # --- lifecycle ---
-    version: int = 1
-    deprecated: bool = False
-    replaced_by: str | None = None
-    retired_at: date | None = None
+```text
+name                    OTel instrument name
+kind                    counter | gauge | histogram
+unit                    UCUM unit
+purpose                 outcome | latency | load | resource | correctness
+description             one precise operational sentence
+owner                   team or component
+attribute_constraints   closed set or approved bucket per key
+required_attributes     subset required on every data point
+emit_frequency          per_request | per_step | per_event | periodic
+histogram_boundaries    explicit ascending values for histograms
+loop_policy             forbidden | aggregate_only | allowed
+version                 registry lifecycle version
+deprecated/replaced_by  migration state
 ```
 
-Identity tuple: `(name, kind, unit, purpose, allowed_tags,
-tag_constraints)`. Immutable once published — see
-`naming-and-lifecycle.md` for the versioning rule.
+## Constructors
 
-Equality and hashing are deliberately **name-based**: two `MetricDef`s
-with the same name are "the same metric" for registry dedup purposes.
-This lets `tag_constraints` be a `Mapping` without breaking hashing,
-and makes "is this a duplicate?" a set membership check.
+Use one of five constructors:
 
-## Ergonomic constructors
+| Constructor | Instrument | Purpose | Default unit |
+| --- | --- | --- | --- |
+| `counter` | Counter | caller selects | `{event}` or explicit |
+| `latency` | Histogram | latency | `s` |
+| `gauge` | Gauge | load | explicit |
+| `resource` | Counter | resource | explicit |
+| `failure_counter` / `failureCounter` | Counter | outcome | explicit failure count |
 
-Never construct `MetricDef(...)` directly. Use the five classmethods;
-each fixes `kind`/`unit`/`purpose` so the call site only states the
-knobs that matter for that metric class.
+The failure constructor adds required `failure.class` values from `FailureClass`.
 
-```python
-MetricDef.counter(
-    name, *, purpose, owner, means, tags=None,
-    emit_frequency="per_event", sampling_rate=1.0, max_rate_hz=None,
-    loop_policy="aggregate_only", cardinality="low",
-    version=1, deprecated=False, replaced_by=None, retired_at=None,
-) -> MetricDef                         # kind="counter", unit="count"
+## TypeScript
 
-MetricDef.latency(
-    name, *, owner, means, tags=None, ...
-) -> MetricDef                         # kind="distribution", unit="ms", purpose="latency"
-
-MetricDef.gauge(
-    name, *, unit, owner, means, tags=None, emit_frequency="periodic", ...
-) -> MetricDef                         # kind="gauge", purpose="load"
-
-MetricDef.resource(
-    name, *, unit, owner, means, tags=None, ...
-) -> MetricDef                         # kind="counter", purpose="resource"
-
-MetricDef.failure_counter(
-    name, *, owner, means, tags=None, ...
-) -> MetricDef                         # kind="counter", purpose="outcome";
-                                       # allowed_tags ⊇ {"failure_class"}
+```ts
+const STEP_DURATION = MetricDef.latency({
+  name: "app.workflow.step.duration",
+  owner: "workflows",
+  description: "Elapsed time for a declared workflow step.",
+  attributes: {
+    "app.workflow.step": new Set(["ingest", "transform", "publish"]),
+  },
+  required: new Set(["app.workflow.step"]),
+  emitFrequency: "per_step",
+});
 ```
 
-`means` is the `operational_meaning` — **always required**, written to
-be readable in six months by somebody who wasn't on the PR. Include
-the division for rates ("divide by X for hit-rate"), start→stop
-boundaries for durations, and the operational failure mode for
-outcome counters.
-
-## Examples
+## Python
 
 ```python
-# Counter — outcome
-CACHE_HIT = MetricDef.counter(
-    "cache.hit.count",
-    purpose="outcome",
-    owner="platform",
-    means="Cache lookup returned a hit; divide by cache.lookup.count for hit-rate.",
-    tags={"backend": frozenset({"redis", "memory"})},
-    emit_frequency="per_request",
-)
-
-# Distribution — latency
-EXTERNAL_API_DURATION = MetricDef.latency(
-    "external_api.request.duration",
-    owner="platform",
-    means="Wall-clock duration of a single external API call, including cache miss path.",
-    tags={"cache_status": frozenset({"hit", "miss", "skipped", "error"})},
-    emit_frequency="per_event",
-    sampling_rate=1.0,
-)
-
-# Gauge — load
-QUEUE_DEPTH = MetricDef.gauge(
-    "worker.queue.depth",
-    unit="items",
-    owner="platform",
-    means="Currently-queued items in the ingest queue, sampled every 10s. (Workflow engine e.g., Hatchet, Celery, Temporal, Sidekiq, Inngest, BullMQ.)",
-    tags={"queue": frozenset({"default", "priority"})},
-    emit_frequency="periodic",
-)
-
-# Counter — resource
-EXTERNAL_API_QUOTA = MetricDef.resource(
-    "external_api.quota.units",
-    unit="units",
-    owner="platform",
-    means="External API quota units consumed per call. Replace the budget value with your dependency's cap (e.g., daily API quota, project-level token budget for most LLM vendors).",
-    tags={"endpoint": frozenset({"list", "detail", "search"})},
-    emit_frequency="per_event",
-)
-
-# Counter — failure outcome
-WORKER_JOB_FAILURES = MetricDef.failure_counter(
-    "worker.job.failure.count",
-    owner="platform",
-    means="A workflow step raised an exception after its retry budget. Replace the stage enumeration below with your domain's workflow stage names.",
-    tags={"stage": frozenset({"ingest", "transform", "publish"})},
+STEP_DURATION = MetricDef.latency(
+    "app.workflow.step.duration",
+    owner="workflows",
+    means="Elapsed time for a declared workflow step.",
+    attributes={
+        "app.workflow.step": frozenset({"ingest", "transform", "publish"})
+    },
+    required=frozenset({"app.workflow.step"}),
     emit_frequency="per_step",
 )
 ```
 
-## Identity field notes
+## Registry validation
 
-- `name` format: `<domain>.<object>.<action>[.<type-suffix>]`. Lowercase,
-  dotted, no abbreviations outside the domain vocabulary. The type
-  suffix disambiguates similarly-named metrics that differ by kind:
-  `.count`, `.duration_ms`, `.value`, `.units`.
-- `kind` and `unit` are set by the constructor. If you think you need
-  a counter in seconds, you actually need a distribution. If you think
-  you need a gauge in counts, you probably want a counter.
-- `purpose` is the semantic bucket. Exactly one purpose fits a metric;
-  if two fit, it's actually two metrics. See `metric-classes.md`.
+Reject:
 
-## Tagging field notes
+- duplicate names
+- missing descriptions, units, or owners
+- required attributes not declared in constraints
+- histograms without ascending explicit boundaries
+- non-histograms with boundaries
+- deprecated definitions without replacements
+- forbidden attribute keys
+- two definitions with the same name but different identity
 
-- `allowed_tags` is derived from `tag_constraints` — don't pass it
-  manually through the constructors.
-- `tag_constraints` maps tag key → `frozenset[str]` (enumerated
-  values) or `str` (name of an approved bucket function in
-  `metric_tags.py`). See `tagging-and-cardinality.md` for which bucket
-  functions are approved.
-- `cardinality` defaults to `"low"` (≤ 20 combinations). Use
-  `"medium"` (≤ ~200) only with an explicit justification in `means=`.
-  `"high"` is forbidden.
+Build SDK histogram views from the registry. Create each instrument lazily or during startup, never inside a request.
 
-## Cost field notes
+## LogEventDef
 
-- `emit_frequency` tells the reader (and the rate-limiter budget) how
-  often this metric fires: `per_request`, `per_step`, `per_event`,
-  `periodic`.
-- `sampling_rate` < 1.0 is required for distributions on hot paths (>
-  1000/s). The helper API reweighs the emission deterministically per
-  tag hash.
-- `max_rate_hz` is the per-process hard cap. The emission helper drops
-  beyond this and emits a `correctness` counter.
-- `loop_policy` controls CI enforcement of loop-safe emission. See
-  `cost-model.md`.
+```text
+name                 stable dotted event name
+level                DEBUG | INFO | WARN | ERROR
+message              fixed human-readable summary
+owner                team or component
+security_relevant    bypasses ordinary verbosity filtering
+sampling_class       optional bounded class such as mandatory | operational | diagnostic
+operation_name       stable operation shared with the span
+related_metric       primary MetricDef explained by this event
+fields               declared key -> operational | correlation | sensitive
+required             subset required on every record
+```
 
-## Lifecycle field notes
+Unlike metric attributes, log fields may contain approved high-cardinality correlation values. They still require an explicit schema, bounded lengths, privacy classification, injection-safe encoding, and retention/access review. Sensitive fields are disabled by default. Read `structured-logging.md` before adding an event.
 
-- `version` starts at 1. A new versioned metric (`<name>.v2`) starts
-  at `version=2` on the new name; the old name keeps `version=1` with
-  `deprecated=True`.
-- `deprecated=True` + `replaced_by="<new-name>"` + `retired_at=<date>`
-  are set together. The CI gate refuses a PR that splits them.
-- `retired_at` in the past is a CI failure — forces removal on
-  schedule.
+When `related_metric` is present, all of its required attributes must be required event fields. The logger emits the exact metric name as `metric.name`. Logger-managed resource, trace, metric, exception, and code-origin fields are reserved and cannot be supplied by event data.
+
+## LogSamplingRule
+
+```text
+id                    stable policy identifier
+rate                  number from 0.0 through 1.0
+locked                mandatory-policy guard; required for explicit ERROR/security rules
+levels                optional closed severity list
+events                optional exact event.name list
+operations            optional exact operation.name list
+environments          optional exact deployment environment list
+sampling_classes      optional exact declared sampling-class list
+security_relevant     optional exact boolean
+```
+
+Evaluate rules in declaration order and use the first match. Hash the policy ID with the workflow `correlation_id`, falling back to the active `trace_id`, so every component makes the same deterministic decision. Retained records contain managed `sampling.policy` and `sampling.rate` fields. Errors and security-relevant records are always retained at `1.0`, even when a broad rule would otherwise drop them.

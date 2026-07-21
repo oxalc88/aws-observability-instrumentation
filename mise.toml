@@ -1,0 +1,34 @@
+[tools]
+python = "3.12"
+node = "22"
+
+[tasks."python:install"]
+run = "pip install -r examples/python/requirements.txt pytest"
+description = "Install Python example dependencies"
+
+[tasks."python:test"]
+run = "python -m pytest -q examples/python"
+description = "Run Python reference example tests"
+
+[tasks."python:ci-gate"]
+run = "python examples/python/ci_gate.py examples/typescript/src examples/python config"
+description = "Run the cross-language policy gate (metrics/logs/tracing contract checks)"
+
+[tasks."ts:install"]
+dir = "examples/typescript"
+run = "npm ci"
+description = "Install TypeScript example dependencies"
+
+[tasks."ts:check"]
+dir = "examples/typescript"
+run = "npm run check"
+description = "Typecheck the canonical TypeScript examples"
+
+[tasks."ts:test"]
+dir = "examples/typescript"
+run = "npm test"
+description = "Run TypeScript example tests"
+
+[tasks.check]
+depends = ["python:ci-gate", "ts:check", "ts:test", "python:test"]
+description = "Run the full cross-language verification suite"

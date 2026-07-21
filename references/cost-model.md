@@ -1,141 +1,63 @@
-# Cost model
+# Cost and volume model
 
-Every `MetricDef` declares its cost shape — `emit_frequency`,
-`sampling_rate`, `max_rate_hz`, `loop_policy`. The helper API and CI
-gate enforce those declarations so a single hot-path site can't blow
-up the Sentry bill.
+Estimate cost from data-point volume, series churn, label metadata, histogram size, trace sampling, and query scan volume. Verify current CloudWatch pricing before a production rollout.
 
-## Emission frequency guidance
+## Metrics
 
-The `emit_frequency` field tells the reader (and the rate limiter)
-roughly how often a metric is expected to fire. Pick the closest
-class:
+Do not sample monotonic counter additions in application code. Sampling makes rates and totals incorrect. Reduce metric volume by:
 
-| Frequency | Approximate cap | Typical use |
-|---|---|---|
-| `per_request` | hundreds/s | HTTP middleware |
-| `per_step` | tens/s | workflow step boundaries |
-| `per_event` | hundreds/s | external API calls, cache lookups |
-| `periodic` | ≤ 1/s | gauges sampled on a schedule |
+- using SDK aggregation instead of exporting each event directly
+- choosing a reasonable periodic export interval; 60 seconds is the normal default
+- aggregating loop values before emission
+- removing unnecessary attributes and duplicate instruments
+- selecting histogram boundaries intentionally
+- using collector batching below CloudWatch request limits
 
-If an emission site fires faster than the class cap, either change
-the class or sample. CI flags emission sites whose containing
-function is clearly hotter than the declared class (best-effort).
+Shorter export intervals improve freshness but increase requests, payload overhead, and Lambda flush pressure.
 
-## Sampling for distributions
+## Histograms
 
-- Distributions on hot paths (> 1000/s) must set `sampling_rate < 1.0`.
-- Sampling is **deterministic per process** — the helper hashes the
-  current tag tuple and keeps emissions from a fixed fraction of
-  tuples. That keeps the distribution representative while cutting
-  volume.
-- The helper multiplies the retained sample's weight by
-  `1 / sampling_rate` so p95/p99 estimates remain correct.
+Each histogram point carries bucket counts. More boundaries increase payload size. Use enough boundaries to resolve SLO thresholds and useful percentiles, not arbitrary fine-grained buckets.
 
-```python
-SEARCH_API_LATENCY = MetricDef.latency(
-    "search_api.query.duration",
-    owner="platform",
-    means="Wall-clock duration of a single search API call.",
-    tags={"result_bucket": "count_bucket"},
-    emit_frequency="per_event",
-    sampling_rate=0.1,           # hot: keep 10%
-    max_rate_hz=500.0,           # hard cap per process
-)
+For an SLO at 500 ms, ensure a boundary at 0.5 seconds. Include meaningful lower and upper ranges based on real workload behavior.
+
+## Loops
+
+Counters inside item loops should normally aggregate and add once:
+
+```ts
+let processed = 0;
+for (const item of items) {
+  await process(item);
+  processed += 1;
+}
+emitter.counter(ITEMS_PROCESSED, processed, attributes);
 ```
 
-## Loop-safe aggregation
+Per-item histograms are allowed only when the distribution itself answers an operational question and `loopPolicy` is explicitly `allowed`.
 
-Counters and distributions inside `for`/`while` bodies are a classic
-Sentry-bill-blowup. The `loop_policy` field + two context managers
-handle it:
+## Traces
 
-### `loop_policy="aggregate_only"` (default)
+Use parent-based ratio sampling for general traffic and preserve upstream decisions. Record 100% only when the selected CloudWatch feature requires it and the cost is accepted. Never sample errors by writing a second independent trace; use tail sampling in a collector when the topology and memory budget support it.
 
-- CI requires any emission inside a loop to be wrapped in
-  `AggregatingCounter` (counters) or `DurationAccumulator`
-  (distributions), OR marked with the escape comment
-  `# instrumentation: loop-aggregate` + a rationale.
-- One emission fires on `__exit__`, carrying the aggregated total.
+## Logs
 
-### `loop_policy="forbidden"`
+Estimate records per event, average/maximum encoded size, ingestion volume, Logs Insights scan volume, retention, archival, and duplicate delivery. Use INFO for material outcomes rather than step-by-step narration. Apply ordered deterministic policies keyed by workflow correlation when approved; never sample required security, error, or audit events. Track policy/rate on retained records and monitor aggregate intentional drops separately. Set retention on every log group; an indefinite default is a cost and privacy decision, not a neutral setting.
 
-- CI refuses **any** emission inside a loop for this metric. Use for
-  metrics where per-iteration emission is never semantically correct
-  (e.g., a `per_request` counter that would dominate the series if
-  emitted from a batch loop).
+## Collector resources
 
-### `loop_policy="allowed"`
+Budget CPU and memory for serialization, batching, retry queues, enrichment, and TLS. Bounded queues trade temporary resilience for bounded memory. Monitor dropped and failed exports so backpressure does not become invisible data loss.
 
-- Opt-in for rare metrics where per-iteration emission is genuinely
-  the intent (e.g., a distribution of per-row processing time where
-  each row is a legitimate event). Use sparingly; ask in review why
-  an aggregator isn't enough.
+## Lambda
 
-### `AggregatingCounter`
+Telemetry affects cold-start size, invocation duration, and memory. Keep initialization at module scope, use short bounded flushes, and measure p95/p99 duration and memory overhead before rollout. A force flush must not consume the remaining function timeout.
 
-```python
-with AggregatingCounter(PRIMARY_SIGNAL_FALLBACK, tags={"reason": "primary_empty"}) as c:
-    for item in items:
-        if not item.primary_signal:
-            c.add(1)
-    # __exit__ emits one counter with the accumulated total.
-```
+## Review checklist
 
-### `DurationAccumulator`
-
-Collects per-iteration durations into a single distribution sample at
-exit (a single value representing the *total* time in the loop),
-rather than emitting one distribution per iteration.
-
-```python
-with DurationAccumulator(ROW_PROCESSING_TOTAL_DURATION, tags={...}) as d:
-    for row in rows:
-        started = time.monotonic()
-        process(row)
-        d.add_ms((time.monotonic() - started) * 1000)
-```
-
-## Rate limiter
-
-The emission helpers carry a per-process token bucket keyed by metric
-name:
-
-- `max_rate_hz` defaults to `None` (unlimited). Set it on any metric
-  that could burst — especially external-API clients, retry loops,
-  and request middleware.
-- When a metric exceeds `max_rate_hz`, further emissions in the
-  current second are dropped.
-- Dropped emissions increment a `correctness` counter named
-  `instrumentation.rate_limit.drop_count` tagged with
-  `metric` — **this single tag is exempt from the anti-cardinality
-  rule** because the registry is finite.
-
-## Production vs. test behavior
-
-The helper API validates every emission against the `MetricDef` at
-call time. Validation failures include: unknown tag key, tag value
-outside constraints, wrong `kind`, loop-policy violation,
-`cardinality="high"`, duration metric emitted with a non-ms unit,
-failure counter without a `failure_class` tag.
-
-- In **pytest** (detected via `"pytest" in sys.modules`) and when
-  `settings.environment != "production"`, validator failures **raise**
-  `InstrumentationContractError`. Tests fail fast; dev catches misuse
-  immediately.
-- In **production**, validator failures drop the emission silently
-  and increment `instrumentation.violation.count` tagged with the
-  violated rule. Observability never crashes the service.
-
-## Cost-model checklist
-
-Before shipping a new metric on a high-traffic path, check:
-
-- [ ] `emit_frequency` set correctly for the actual firing rate.
-- [ ] `sampling_rate` set for distributions expected > 1000/s.
-- [ ] `max_rate_hz` set for anything that could burst.
-- [ ] `loop_policy` set — if the metric will ever appear in a loop,
-      pick `aggregate_only` (default) and wrap it.
-- [ ] Is a trace span (via `sentry_sdk.start_span`) a better fit than
-      a metric for this signal? If the signal is per-operation detail
-      rather than aggregate, a span is cheaper and richer.
+- Estimate combinations for all data-point and resource labels.
+- Estimate points per export interval and uncompressed payload size.
+- Confirm no duplicate EMF and native OTLP pipeline.
+- Confirm trace sample ratio and expected spans per request.
+- Confirm expected log bytes, retention, query scans, and no stdout/OTLP duplicate path.
+- Confirm PromQL selectors avoid broad regex scans.
+- Set an owner for collector capacity and export-failure alarms.

@@ -1,477 +1,296 @@
-"""AST-based CI gate — the drop-in pattern for `scripts/check_metrics.py`.
-
-Drop-in at `scripts/check_metrics.py` (or wherever your project's
-check loop invokes its lint steps from). The gate is AST-based, not
-regex-based: regex on Python source is a liability when call sites
-split across lines or use unusual formatting.
-
-Invocation:
-
-    python scripts/check_metrics.py \\
-        --registry yourapp/shared/metrics.py \\
-        --emission-module yourapp/observability.py \\
-        --project-root yourapp
-
-Exit code is non-zero on any violation. Run locally via your
-project's check loop (`make check`, `npm run lint`, `pre-commit`,
-`just check`, `bundle exec rake check`) and wire into CI as a
-required status.
-
-Language portability: this reference is a Python `ast`-based
-implementation. The same 13 checks port directly to `ts-morph`/
-`ast-grep` (TypeScript), `go/ast` (Go), `parser` (Ruby), or any
-language with a first-party AST. Keep the check identifiers (M001 …
-M013) so reviewers can reference them identically across ports.
-
-The 13 checks (mirroring the enforcement reference):
-
-  1.  `sentry_sdk.metrics.*` called outside the emission module.
-  2.  `emit_*` whose first positional argument is not a `MetricDef`
-      symbol (raw string, f-string, .format, variable).
-  3.  A `MetricDef` (via any classmethod) missing a required kwarg.
-  4.  Duplicate metric name in the registry.
-  5.  Metric name failing the naming regex.
-  6.  `cardinality="medium"` without a justification line in `means=`.
-  7.  Tag key outside the metric's `allowed_tags` at a call site
-      (best-effort — only checked when tags is a dict literal).
-  8.  Deprecated `MetricDef` with no `replaced_by` or no `retired_at`.
-  9.  `retired_at` in the past on a still-present entry.
-  10. Identity-tuple change on an existing `MetricDef`
-      (diff vs. baseline — optional, requires --baseline).
-  11. Non-deprecated entry removed from the registry (requires
-      --baseline).
-  12. `emit_counter`/`emit_distribution` inside a `for`/`while` body
-      for a metric whose `loop_policy != "allowed"`, unless wrapped in
-      `AggregatingCounter` / `DurationAccumulator` / bears the escape
-      comment `# instrumentation: loop-aggregate`.
-  13. Dynamic metric name (`.name` field assembled at runtime — any
-      non-constant expression as the first argument to a classmethod).
-"""
+"""Static contract gate for Python, TypeScript, and JavaScript instrumentation."""
 
 from __future__ import annotations
 
-import argparse
 import ast
 import re
 import sys
-from collections.abc import Iterable, Iterator
-from dataclasses import dataclass, field
-from datetime import date
+from dataclasses import dataclass
 from pathlib import Path
 
-# --- Configurables ---------------------------------------------------------
-
-METRIC_NAME_RE = re.compile(r"^[a-z][a-z0-9]*(\.[a-z][a-z0-9_]*)+(\.v\d+)?$")
-
-# Classmethods on MetricDef. Each maps to the set of required kwargs.
-METRIC_CLASSMETHODS: dict[str, frozenset[str]] = {
-    "counter": frozenset({"purpose", "owner", "tags", "means", "emit_frequency"}),
-    "latency": frozenset({"owner", "tags", "means", "emit_frequency"}),
-    "gauge": frozenset({"unit", "owner", "tags", "means", "emit_frequency"}),
-    "resource": frozenset({"unit", "owner", "tags", "means", "emit_frequency"}),
-    "failure_counter": frozenset({"owner", "tags", "means", "emit_frequency"}),
-}
-
-EMIT_FUNCS: frozenset[str] = frozenset({
+SOURCE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".mjs", ".cjs"}
+CONFIG_SUFFIXES = {".json", ".yaml", ".yml"}
+APPROVED_INSTRUMENT_FILES = {"emission_module.py", "metric-emitter.ts"}
+APPROVED_LOGGING_FILES = {"structured_logging.py", "structured-logger.ts"}
+SKIP_PARTS = {"node_modules", ".git", "dist", "coverage", "test", "tests"}
+EMIT_NAMES = {
+    "counter",
+    "gauge",
+    "histogram",
+    "latency",
+    "failure",
     "emit_counter",
     "emit_gauge",
-    "emit_distribution",
+    "emit_histogram",
     "emit_latency",
     "emit_failure",
-})
+}
+FORBIDDEN_METRIC_KEYS = {
+    "user.id",
+    "user_id",
+    "request.id",
+    "request_id",
+    "session.id",
+    "session_id",
+    "session.id",
+    "connection_string",
+    "connection.string",
+    "request.headers",
+    "response.headers",
+    "trace.id",
+    "trace_id",
+    "span.id",
+    "span_id",
+    "url.full",
+    "url.query",
+    "exception.message",
+    "exception.stacktrace",
+    "gen_ai.conversation.id",
+    "gen_ai.input.messages",
+    "gen_ai.output.messages",
+}
+RESOURCE_ONLY_KEYS = {
+    "service.name",
+    "service.version",
+    "deployment.environment.name",
+    "cloud.region",
+    "cloud.account.id",
+    "aws.ecs.task.arn",
+}
+FORBIDDEN_LOG_TERMS = {
+    "authorization",
+    "cookie",
+    "password",
+    "passwd",
+    "secret",
+    "access_token",
+    "refresh_token",
+    "api_key",
+    "request.body",
+    "request_body",
+    "response.body",
+    "response_body",
+    "session_id",
+    "exception.message",
+    "exception.stacktrace",
+    "gen_ai.input.messages",
+    "gen_ai.output.messages",
+    "prompt",
+}
 
-AGGREGATORS: frozenset[str] = frozenset({
-    "AggregatingCounter",
-    "DurationAccumulator",
-    "time_latency",
-    "retry_with_instrumentation",
-})
 
-LOOP_AGGREGATE_ESCAPE = "instrumentation: loop-aggregate"
-
-
-# --- Data types ------------------------------------------------------------
-
-
-@dataclass
+@dataclass(frozen=True)
 class Violation:
+    code: str
     path: Path
     line: int
-    code: str
     message: str
 
-    def format(self) -> str:
-        return f"{self.path}:{self.line}: {self.code}: {self.message}"
+    def __str__(self) -> str:
+        return f"{self.path}:{self.line}: {self.code} {self.message}"
 
 
-@dataclass
-class RegistryEntry:
-    name: str
-    classmethod: str
-    line: int
-    kwargs: dict[str, ast.expr] = field(default_factory=dict)
-
-
-# --- Registry walk (PR-local, one file) ------------------------------------
-
-
-def collect_registry(
-    path: Path,
-) -> tuple[list[RegistryEntry], list[Violation]]:
-    """Parse the registry file and extract every `MetricDef.<cls>(...)` call."""
-
-    tree = ast.parse(path.read_text(), filename=str(path))
-    entries: list[RegistryEntry] = []
-    violations: list[Violation] = []
-
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        # Match MetricDef.<cls>(...)
-        if not (
-            isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "MetricDef"
-            and node.func.attr in METRIC_CLASSMETHODS
-        ):
-            continue
-
-        classmethod_name = node.func.attr
-
-        # First positional arg = metric name.
-        if not node.args:
-            violations.append(
-                Violation(
-                    path, node.lineno, "M013",
-                    f"MetricDef.{classmethod_name} called with no name argument.",
-                )
-            )
-            continue
-        name_arg = node.args[0]
-        if not (isinstance(name_arg, ast.Constant) and isinstance(name_arg.value, str)):
-            violations.append(
-                Violation(
-                    path, node.lineno, "M013",
-                    f"MetricDef.{classmethod_name} name must be a string literal; "
-                    f"dynamic names are forbidden.",
-                )
-            )
-            continue
-
-        name = name_arg.value
-        kwargs = {kw.arg: kw.value for kw in node.keywords if kw.arg is not None}
-        entries.append(
-            RegistryEntry(
-                name=name,
-                classmethod=classmethod_name,
-                line=node.lineno,
-                kwargs=kwargs,
-            )
-        )
-
-    return entries, violations
-
-
-def check_registry(
-    path: Path, entries: list[RegistryEntry]
-) -> list[Violation]:
-    """Checks 3, 4, 5, 6, 8, 9."""
-
-    violations: list[Violation] = []
-    seen_names: dict[str, int] = {}
-
-    for entry in entries:
-        # 4. Duplicate name.
-        if entry.name in seen_names:
-            violations.append(
-                Violation(
-                    path, entry.line, "M004",
-                    f"Duplicate metric name {entry.name!r} "
-                    f"(also defined at line {seen_names[entry.name]}).",
-                )
-            )
-        else:
-            seen_names[entry.name] = entry.line
-
-        # 5. Name regex.
-        if not METRIC_NAME_RE.match(entry.name):
-            violations.append(
-                Violation(
-                    path, entry.line, "M005",
-                    f"Metric name {entry.name!r} does not match "
-                    f"<domain>.<object>.<action> (got {entry.name!r}).",
-                )
-            )
-
-        # 3. Required fields.
-        required = METRIC_CLASSMETHODS[entry.classmethod]
-        missing = required - entry.kwargs.keys()
-        if missing:
-            violations.append(
-                Violation(
-                    path, entry.line, "M003",
-                    f"MetricDef.{entry.classmethod} {entry.name!r} missing "
-                    f"required kwargs: {sorted(missing)}.",
-                )
-            )
-
-        # 6. medium cardinality requires justification in means=.
-        cardinality = entry.kwargs.get("cardinality")
-        if (
-            isinstance(cardinality, ast.Constant)
-            and cardinality.value == "medium"
-        ):
-            means = entry.kwargs.get("means")
-            means_text = (
-                means.value if isinstance(means, ast.Constant) else ""
-            )
-            if "justif" not in (means_text or "").lower():
-                violations.append(
-                    Violation(
-                        path, entry.line, "M006",
-                        f"Metric {entry.name!r} has cardinality='medium' but "
-                        f"means= does not contain a justification "
-                        f"(expect a 'Justification: ...' clause).",
-                    )
-                )
-
-        # 8 & 9. Lifecycle.
-        deprecated = entry.kwargs.get("deprecated")
-        deprecated_value = (
-            deprecated.value if isinstance(deprecated, ast.Constant) else False
-        )
-        if deprecated_value:
-            if "replaced_by" not in entry.kwargs:
-                violations.append(
-                    Violation(
-                        path, entry.line, "M008",
-                        f"Deprecated metric {entry.name!r} is missing "
-                        f"replaced_by=.",
-                    )
-                )
-            if "retired_at" not in entry.kwargs:
-                violations.append(
-                    Violation(
-                        path, entry.line, "M008",
-                        f"Deprecated metric {entry.name!r} is missing "
-                        f"retired_at=.",
-                    )
-                )
-
-        retired_at = entry.kwargs.get("retired_at")
-        if isinstance(retired_at, ast.Call):
-            # Expect date(YYYY, M, D)
-            try:
-                y, m, d = (
-                    arg.value for arg in retired_at.args
-                    if isinstance(arg, ast.Constant)
-                )
-                if date(y, m, d) < date.today():
-                    violations.append(
-                        Violation(
-                            path, entry.line, "M009",
-                            f"Metric {entry.name!r} has retired_at in the "
-                            f"past ({y}-{m:02d}-{d:02d}); remove the entry.",
-                        )
-                    )
-            except (ValueError, TypeError):
-                pass
-
-    return violations
-
-
-# --- Call-site walk --------------------------------------------------------
-
-
-def iter_py_files(root: Path) -> Iterator[Path]:
-    for path in root.rglob("*.py"):
-        # Skip migrations, tests for direct emission checks if desired.
-        if any(part in {"migrations", ".venv", "__pycache__"} for part in path.parts):
-            continue
-        yield path
-
-
-def check_call_sites(
-    root: Path, emission_module: Path, entries: list[RegistryEntry]
-) -> list[Violation]:
-    """Checks 1, 2, 7, 12, 13."""
-
-    violations: list[Violation] = []
-    loop_policy_by_name: dict[str, str] = {}
-    for entry in entries:
-        policy = entry.kwargs.get("loop_policy")
-        loop_policy_by_name[entry.name] = (
-            policy.value if isinstance(policy, ast.Constant) else "aggregate_only"
-        )
-
-    for path in iter_py_files(root):
-        try:
-            source = path.read_text()
-            tree = ast.parse(source, filename=str(path))
-        except SyntaxError:
-            continue
-
-        source_lines = source.splitlines()
-
-        # Build parent and loop-depth maps via a single walker.
-        for parent in ast.walk(tree):
-            for child in ast.iter_child_nodes(parent):
-                child._parent = parent  # type: ignore[attr-defined]
-
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
+def _source_files(roots: list[Path]) -> list[Path]:
+    files: list[Path] = []
+    for root in roots:
+        candidates = [root] if root.is_file() else root.rglob("*")
+        for path in candidates:
+            if not path.is_file() or path.suffix not in SOURCE_SUFFIXES:
                 continue
+            is_test = path.name.startswith("test_") or ".test." in path.name
+            if path.name == "ci_gate.py" or is_test or any(part in SKIP_PARTS for part in path.parts):
+                continue
+            files.append(path)
+    return sorted(set(files))
 
-            # 1. sentry_sdk.metrics.* outside the emission module.
-            if (
-                path.resolve() != emission_module.resolve()
-                and _is_sentry_metrics_call(node)
-            ):
-                violations.append(
-                    Violation(
-                        path, node.lineno, "M001",
-                        "sentry_sdk.metrics.* may only be called from the "
-                        "emission module — use emit_* wrappers.",
-                    )
-                )
 
-            func_name = _simple_name(node.func)
+def _config_files(roots: list[Path]) -> list[Path]:
+    files: list[Path] = []
+    for root in roots:
+        candidates = [root] if root.is_file() else root.rglob("*")
+        for path in candidates:
+            if path.is_file() and path.suffix in CONFIG_SUFFIXES:
+                files.append(path)
+    return sorted(set(files))
 
-            # 2 & 13. emit_* first arg must be a Name referencing a MetricDef.
-            if func_name in EMIT_FUNCS:
-                if not node.args:
-                    violations.append(
-                        Violation(
-                            path, node.lineno, "M002",
-                            f"{func_name} called with no metric argument.",
-                        )
-                    )
-                else:
-                    first = node.args[0]
-                    if not isinstance(first, ast.Name):
-                        violations.append(
-                            Violation(
-                                path, node.lineno, "M002",
-                                f"{func_name} first argument must be a "
-                                f"MetricDef symbol (got "
-                                f"{type(first).__name__}).",
-                            )
-                        )
 
-                # 12. Loop-policy check.
-                if _inside_loop(node) and isinstance(node.args[0] if node.args else None, ast.Name):
-                    metric_sym = node.args[0].id  # type: ignore[union-attr]
-                    # Try to resolve to a registry entry by symbol name —
-                    # best-effort: we trust the convention that the
-                    # SCREAMING_SNAKE symbol name maps 1:1 to a registry
-                    # entry. Real implementations can load the registry
-                    # module and introspect.
-                    # If not resolvable we fall through (registry-only
-                    # symbols get enforced when this is run with the
-                    # actual registry module imported).
-                    if _has_escape_comment(source_lines, node.lineno):
-                        continue
-                    if _wrapped_in_aggregator(node):
-                        continue
-                    # Conservative: flag unless we can prove loop_policy == "allowed".
-                    # (A real gate would look up by metric_sym; here we
-                    # flag any unwrapped emit inside a loop.)
-                    violations.append(
-                        Violation(
-                            path, node.lineno, "M012",
-                            f"{func_name}({metric_sym}) inside a loop — wrap "
-                            f"with AggregatingCounter / DurationAccumulator, "
-                            f"or add '# {LOOP_AGGREGATE_ESCAPE}: <reason>'.",
-                        )
-                    )
+def _near_metric_context(lines: list[str], index: int) -> bool:
+    window = "\n".join(lines[max(0, index - 8) : min(len(lines), index + 4)])
+    return bool(re.search(r"MetricDef\.|emitter\.|emit_(?:counter|gauge|histogram|latency|failure)", window))
 
+
+def _near_log_context(lines: list[str], index: int) -> bool:
+    window = "\n".join(lines[max(0, index - 10) : min(len(lines), index + 5)])
+    return bool(
+        re.search(
+            r"LogEventDef\s*\(|(?:logger|LOGGER)\.(?:emit|debug|info|warn|warning|error|critical)\s*\(",
+            window,
+        )
+    )
+
+
+def _text_checks(path: Path, text: str) -> list[Violation]:
+    violations: list[Violation] = []
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        number = index + 1
+        if path.name not in APPROVED_INSTRUMENT_FILES and re.search(
+            r"\.(?:createCounter|createGauge|createHistogram|create_counter|create_gauge|create_histogram)\s*\(",
+            line,
+        ):
+            violations.append(Violation("CW001", path, number, "create OTel instruments only in the emission module"))
+        if re.search(r"PutMetricData|put_metric_data", line):
+            violations.append(Violation("CW002", path, number, "do not call CloudWatch PutMetricData from application instrumentation"))
+        if re.search(r"https://monitoring\.[A-Za-z0-9-]+\.amazonaws\.com/v1/metrics", line):
+            violations.append(Violation("CW003", path, number, "keep regional CloudWatch endpoints in deployment configuration"))
+        if re.search(r"name\s*[:=]\s*['\"][^'\"]+(?:_total|_bucket|_sum|_count)['\"]", line):
+            violations.append(Violation("CW004", path, number, "do not add Prometheus-generated suffixes to OTel names"))
+        if _near_metric_context(lines, index) and not _near_log_context(lines, index):
+            for key in FORBIDDEN_METRIC_KEYS:
+                if key in line:
+                    violations.append(Violation("CW005", path, number, f"forbidden metric attribute key {key!r}"))
+            if re.search(r"str\s*\(\s*(?:exc|error)\s*\)|(?:exc|error)\.message|stack(?:trace)?", line, re.IGNORECASE):
+                violations.append(Violation("CW006", path, number, "do not attach exception text to metrics"))
+            for key in RESOURCE_ONLY_KEYS:
+                if key in line and re.search(r"emitter\.|emit_", "\n".join(lines[max(0, index - 3) : index + 2])):
+                    violations.append(Violation("CW007", path, number, f"put {key!r} on the OTel resource"))
+        if re.search(r"\bDate\.now\s*\(|\btime\.time\s*\(", line) and re.search(
+            r"duration|elapsed|latency|started|start_time", text, re.IGNORECASE
+        ):
+            violations.append(Violation("CW008", path, number, "measure elapsed time with a monotonic clock"))
+        if re.search(r"sentry_sdk|sentry-sdk|@sentry/", line):
+            violations.append(Violation("CW013", path, number, "legacy Sentry SDK use remains in adaptation source"))
+        if re.search(r"aws[-_]xray[-_]sdk|amazon/aws-xray-daemon", line, re.IGNORECASE):
+            violations.append(Violation("CW014", path, number, "use OpenTelemetry instead of the X-Ray SDK or daemon"))
+        if path.name not in APPROVED_LOGGING_FILES:
+            if re.search(r"\bconsole\.(?:trace|debug|log|info|warn|error)\s*\(", line):
+                violations.append(Violation("CW015", path, number, "use the approved structured logger instead of console methods"))
+            if path.suffix == ".py" and re.search(r"\bprint\s*\(", line):
+                violations.append(Violation("CW015", path, number, "use the approved structured logger instead of print"))
+            if _near_log_context(lines, index):
+                lowered = line.lower()
+                for term in FORBIDDEN_LOG_TERMS:
+                    if term in lowered:
+                        violations.append(Violation("CW016", path, number, f"forbidden operational log field/content {term!r}"))
+                if re.search(
+                    r"str\s*\(\s*(?:exc|error)\s*\)|(?:exc|error)\.message|stack(?:trace)?|traceback\.format",
+                    line,
+                    re.IGNORECASE,
+                ):
+                    violations.append(Violation("CW017", path, number, "classify failures; do not log raw error text or stack traces"))
+
+    if path.name not in APPROVED_LOGGING_FILES:
+        start_pattern = re.compile(
+            r"(?:logger|LOGGER)\.(?:emit|debug|info|warn|warning|error|critical)\s*\(",
+        )
+        terminator = re.compile(r"(?m)^\s*(?:}\s*)?\);?\s*$")
+        for match in start_pattern.finditer(text):
+            end = terminator.search(text, match.end())
+            call_text = text[match.end() : end.start() if end else match.end() + 1_000]
+            if re.search(r"\b(?:event|payload|request_body|response_body|headers)\b", call_text):
+                line = text.count("\n", 0, match.start()) + 1
+                violations.append(Violation("CW018", path, line, "do not log raw events, payloads, bodies, or headers"))
+
+    metric_names: dict[str, int] = {}
+    for match in re.finditer(r"\bname\s*[:=]\s*['\"]([A-Za-z][A-Za-z0-9_.\-/]{0,254})['\"]", text):
+        name = match.group(1)
+        line = text.count("\n", 0, match.start()) + 1
+        if name in metric_names:
+            violations.append(Violation("CW010", path, line, f"duplicate metric name {name!r} in file"))
+        metric_names[name] = line
+
+    if "lambda" in path.name.lower() or re.search(r"\bhandler\s*\(", text):
+        handler_match = re.search(r"(?:function\s+handler|def\s+handler|const\s+handler\s*=)", text)
+        if handler_match:
+            handler_text = text[handler_match.start() :]
+            searchable_handler = re.sub(r"(?m)^\s*(?://|#).*?$", "", handler_text)
+            base_line = text.count("\n", 0, handler_match.start()) + 1
+            init_match = re.search(r"(?:startTelemetry|init_telemetry)\s*\(", searchable_handler)
+            if init_match:
+                violations.append(Violation("CW011", path, base_line + searchable_handler.count("\n", 0, init_match.start()), "initialize telemetry outside the Lambda handler"))
+            shutdown_match = re.search(r"\.shutdown\s*\(", searchable_handler)
+            if shutdown_match:
+                violations.append(Violation("CW012", path, base_line + searchable_handler.count("\n", 0, shutdown_match.start()), "do not shut down providers per Lambda invocation"))
     return violations
 
 
-# --- AST helpers -----------------------------------------------------------
+def _python_loop_checks(path: Path, text: str) -> list[Violation]:
+    if path.suffix != ".py":
+        return []
+    try:
+        tree = ast.parse(text, filename=str(path))
+    except SyntaxError as exc:
+        return [Violation("CW000", path, exc.lineno or 1, f"syntax error: {exc.msg}")]
+    violations: list[Violation] = []
+    lines = text.splitlines()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+            continue
+        for child in ast.walk(node):
+            if not isinstance(child, ast.Call):
+                continue
+            name = child.func.attr if isinstance(child.func, ast.Attribute) else child.func.id if isinstance(child.func, ast.Name) else ""
+            if name not in EMIT_NAMES:
+                continue
+            source_line = lines[child.lineno - 1] if child.lineno <= len(lines) else ""
+            if "instrumentation: loop-allowed" not in source_line:
+                violations.append(Violation("CW009", path, child.lineno, "aggregate metric values emitted inside loops"))
+    return violations
 
 
-def _simple_name(expr: ast.expr) -> str | None:
-    if isinstance(expr, ast.Name):
-        return expr.id
-    if isinstance(expr, ast.Attribute):
-        return expr.attr
-    return None
+def _typescript_loop_checks(path: Path, text: str) -> list[Violation]:
+    if path.suffix not in {".ts", ".tsx", ".js", ".mjs", ".cjs"}:
+        return []
+    violations: list[Violation] = []
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if not re.search(r"\b(?:for|while)\s*\(", line):
+            continue
+        window = lines[index : min(len(lines), index + 20)]
+        for offset, candidate in enumerate(window):
+            if "instrumentation: loop-allowed" in candidate:
+                continue
+            if re.search(r"\bemitter\.(?:counter|gauge|histogram|latency|failure)\s*\(", candidate):
+                violations.append(Violation("CW009", path, index + offset + 1, "aggregate metric values emitted inside loops"))
+    return violations
 
 
-def _is_sentry_metrics_call(call: ast.Call) -> bool:
-    # sentry_sdk.metrics.incr(...) / distribution(...) / gauge(...)
-    fn = call.func
-    if not isinstance(fn, ast.Attribute):
-        return False
-    if not isinstance(fn.value, ast.Attribute):
-        return False
-    if fn.value.attr != "metrics":
-        return False
-    if not isinstance(fn.value.value, ast.Name):
-        return False
-    return fn.value.value.id == "sentry_sdk"
+def check_paths(roots: list[Path]) -> list[Violation]:
+    violations: list[Violation] = []
+    global_names: dict[tuple[str, str], tuple[Path, int]] = {}
+    for path in _source_files(roots):
+        text = path.read_text(encoding="utf-8")
+        violations.extend(_text_checks(path, text))
+        violations.extend(_python_loop_checks(path, text))
+        violations.extend(_typescript_loop_checks(path, text))
+        for match in re.finditer(r"\bname\s*[:=]\s*['\"]([A-Za-z][A-Za-z0-9_.\-/]{0,254})['\"]", text):
+            name = match.group(1)
+            line = text.count("\n", 0, match.start()) + 1
+            language = "python" if path.suffix == ".py" else "javascript"
+            key = (language, name)
+            if key in global_names:
+                first_path, first_line = global_names[key]
+                violations.append(Violation("CW010", path, line, f"metric {name!r} duplicates {first_path}:{first_line}"))
+            else:
+                global_names[key] = (path, line)
+    for path in _config_files(roots):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"aws[-_]xray[-_]sdk|amazon/aws-xray-daemon", line, re.IGNORECASE):
+                violations.append(Violation("CW014", path, number, "use an OpenTelemetry collector or CloudWatch Agent instead of the X-Ray SDK or daemon"))
+    return sorted(set(violations), key=lambda item: (str(item.path), item.line, item.code))
 
 
-def _inside_loop(node: ast.AST) -> bool:
-    cur = getattr(node, "_parent", None)
-    while cur is not None:
-        if isinstance(cur, (ast.For, ast.AsyncFor, ast.While)):
-            return True
-        if isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-            # Nested function scope — treat as a fresh frame; emits
-            # inside a helper called from a loop aren't detectable
-            # statically.
-            return False
-        cur = getattr(cur, "_parent", None)
-    return False
-
-
-def _wrapped_in_aggregator(node: ast.AST) -> bool:
-    """True if an ancestor is a `with AggregatingCounter(...)` (etc.) block."""
-
-    cur = getattr(node, "_parent", None)
-    while cur is not None:
-        if isinstance(cur, (ast.With, ast.AsyncWith)):
-            for item in cur.items:
-                ctx = item.context_expr
-                if isinstance(ctx, ast.Call):
-                    name = _simple_name(ctx.func)
-                    if name in AGGREGATORS:
-                        return True
-        cur = getattr(cur, "_parent", None)
-    return False
-
-
-def _has_escape_comment(source_lines: list[str], lineno: int) -> bool:
-    # Same line or the line directly above.
-    for target in (lineno, lineno - 1):
-        if 1 <= target <= len(source_lines):
-            if LOOP_AGGREGATE_ESCAPE in source_lines[target - 1]:
-                return True
-    return False
-
-
-# --- Entry point -----------------------------------------------------------
-
-
-def main(argv: Iterable[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--registry", type=Path, required=True)
-    parser.add_argument("--emission-module", type=Path, required=True)
-    parser.add_argument("--project-root", type=Path, required=True)
-    args = parser.parse_args(list(argv) if argv is not None else None)
-
-    entries, v1 = collect_registry(args.registry)
-    v2 = check_registry(args.registry, entries)
-    v3 = check_call_sites(args.project_root, args.emission_module, entries)
-
-    violations = v1 + v2 + v3
-    for v in violations:
-        sys.stdout.write(v.format() + "\n")
-
-    return 1 if violations else 0
+def main(argv: list[str]) -> int:
+    roots = [Path(arg) for arg in argv] or [Path("examples/typescript/src"), Path("examples/python"), Path("config")]
+    violations = check_paths(roots)
+    for violation in violations:
+        print(violation)
+    if violations:
+        print(f"\n{len(violations)} instrumentation contract violation(s)")
+        return 1
+    print("Instrumentation contract checks passed")
+    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

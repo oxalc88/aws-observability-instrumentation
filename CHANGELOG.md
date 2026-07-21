@@ -1,138 +1,31 @@
 # Changelog
 
-All notable changes to the `sentry-instrumentation` skill are documented
-here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
-version numbers follow [SemVer](https://semver.org/spec/v2.0.0.html).
+All notable changes to the `cloudwatch-instrumentation` skill are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version numbers follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- TypeScript / Node reference implementation (`examples/typescript/`).
-- `adapters/continue.md` + `adapters/windsurf.md` field-testing.
-- `ci/` workflow templates for GitHub Actions, GitLab CI, pre-commit.
+## [0.1.0] - 2026-07-21
 
-## [1.2.0] — 2026-06-19
-
-First **tracing** surface. The skill, previously Metrics-only, now also
-covers Sentry's AI Agents / Conversations product via the `gen_ai.*`
-span conventions. No change to any existing metric API, the CI gate, or
-the installer interface — this is purely additive.
+Initial CloudWatch/OpenTelemetry release, derived from `sentry-instrumentation` `v1.2.0` at commit `2beb602`. This project follows an independent version line from that baseline.
 
 ### Added
 
-- **`references/ai-agent-conversations.md`** — how to instrument AI
-  agent conversations for Sentry's Explore → Conversations view:
-  `gen_ai.conversation.id` (and `sentry_sdk.ai.set_conversation_id`),
-  the three span types (`gen_ai.invoke_agent` / `gen_ai.chat` /
-  `gen_ai.execute_tool`) with their required attributes, the
-  `{role, parts}` message format, reasoning-part handling, token
-  subset accounting (cached/reasoning are subsets, not separate
-  totals), and how it composes with the governed metric helpers
-  (failures still emit a `failure_counter`; the conversation id never
-  becomes a metric tag). Sourced from the official Sentry docs.
-- **`examples/python/ai_agent_spans.py`** — drop-in module:
-  `set_conversation_id` (capability-gated against the beta
-  `sentry_sdk.ai` API), `conversation_scope`, `{role, parts}` message
-  helpers, and context managers for the three `gen_ai.*` span types
-  with `set_chat_response` for the token/response side.
+- **TypeScript reference implementation** with runtime metric validation, histogram views, OTel auto-instrumentation, structured logging, HTTP/workflow surfaces, Lambda lifecycle handling, typechecking, and tests.
+- **Python parity implementation** for governed metrics, structured logs, traces, Lambda lifecycle, and the shared failure taxonomy.
+- **SQS adapters for TypeScript and Python** with correlation validation, AWS X-Ray or W3C extraction, ten-attribute quota enforcement, producer links, per-record spans, correlated metrics/logs, and partial-batch failures.
+- **Kinesis adapters for TypeScript and Python** with versioned propagation envelopes, conservative 1 MiB serialized-envelope preflights, producer links, per-record spans, correlated metrics/logs, default all-or-retry Lambda handlers, and contract tests.
+- **Transport-neutral workflow propagation** carrying OTel context and a stable business `correlation_id` independently across retries, fan-out, DLQs, and replay.
+- **CloudWatch deployment templates** for SigV4 or bearer-token OTLP export, ECS/Fargate, three-signal collection, and least-scope IAM.
+- **AWS/OWASP-aligned structured logging** with declared schemas, trace correlation, privacy classes, injection controls, deterministic sampling, locked error/security retention, safe exception source fields, and sink failure isolation.
+- **CloudWatch references** for native OTLP and PromQL, deployment targets, structured logging, asynchronous propagation, Logs Insights investigations, and AI/LLM semantic spans.
 
 ### Changed
 
-- **`SKILL.md`** — description and intro now cover tracing alongside
-  metrics; new decision rule 7 routes AI agent / LLM / tool / conversation
-  work to the tracing reference; reference index and Python project-path
-  table updated.
-- **`references/charter.md`** — scope now includes AI agent conversation
-  tracing; the general-tracing exclusion is narrowed to "everything
-  except the `gen_ai.*` namespace."
-- **`scripts/install.sh`** — `ai-agent-conversations.md` added to the
-  concatenated rules file emitted for Cursor, Aider, Continue, and
-  Windsurf.
-- **`README.md`**, **`AGENTS.md`**, **`examples/python/README.md`** —
-  updated to describe the metrics + tracing scope and list the new files.
+- Replaced vendor-specific instrumentation policy with language-agnostic OpenTelemetry contracts for CloudWatch native OTLP metrics and traces.
+- Expanded the static policy gate to cover Python, TypeScript, JavaScript, metric/log operation links, Lambda lifecycle, sensitive content, and unsafe raw logging.
+- Updated Lambda guidance for optimized ADOT/Application Signals or verified collectorless SDK ownership, bounded flushes, and platform-delivered JSON logs.
+- Updated the skill manifest, installer, agent adapters, and repository documentation for `cloudwatch-instrumentation`.
 
-## [1.1.0] — 2026-04-24
+### Removed
 
-Progressive-disclosure refactor of `SKILL.md`. Hot-path bytes — the content
-the agent reads on every skill invocation — shrink from 224 lines / 11.8 KB
-to 69 lines / 5.6 KB (≈53% reduction) without removing any decision-driving
-content. Deep rules stay in `references/` and load only when the task asks
-for them. No behavior change for agents that follow the decision rules; no
-change to the `MetricDef` schema, the Python examples, the CI gate, or the
-installer command-line interface.
-
-### Changed
-
-- **`SKILL.md`** restructured as a lean dispatcher. Kept: YAML frontmatter
-  with auto-invocation triggers, the six decision rules, language-detection
-  hint, Python project-path table, and the reference index.
-- **`scripts/install.sh`** `MINIMAL_CONCAT_FILES` expanded from 5 files to 7.
-  `references/charter.md` and `references/review-rubric.md` are now inlined
-  into the single rules file emitted for Cursor, Aider, Continue, and
-  Windsurf, so agents that cannot lazy-load references still see the charter
-  principles and the PR-review rubric. Claude Code continues to use the
-  symlink install and benefits from the leaner `SKILL.md`.
-
-### Removed (from `SKILL.md` only — no information lost)
-
-- **Charter restatement** — the full version already lives in
-  `references/charter.md`, linked from the reference index.
-- **"When this skill applies" section** — duplicated the YAML
-  `description:` field's auto-invocation triggers.
-- **TypeScript and Go project-path tables** — placeholders for ports
-  that have not shipped. Will be re-introduced alongside
-  `examples/typescript/` (v0.2) and `examples/go/` (v0.3).
-- **Quality-gate checklist** — the full version already lives in
-  `references/review-rubric.md`, linked from the reference index.
-
-### Rationale
-
-Anything that loads on every skill invocation — every `SKILL.md` byte —
-competes with the task itself for the model's attention and token budget.
-The deleted sections were either duplicates of content the agent can
-retrieve on demand, or placeholders for languages without shipped
-references. Moving them out of the hot path shortens the preamble, lets the
-model spend more attention on the actual coding task, and keeps the
-progressive-disclosure boundary clean: `SKILL.md` decides *which* reference
-to open; `references/` carries the depth.
-
-## [1.0.0] — 2026-04-17
-
-Stable release. Same content as 0.1.0; promoted to 1.0.0 to signal API
-stability so downstream projects can pin the skill (`git checkout v1.0.0`
-or `git submodule add -b v1.0.0 ...`) without expecting breaking changes
-to SKILL.md, the reference docs, the Python example modules, the CI gate,
-or the installer interface.
-
-## [0.1.0] — 2026-04-17
-
-Initial open-source release. Python canonical reference, production-tested at
-Torta Studios.
-
-### Added
-
-- **SKILL.md** — language-aware skill contract with Anthropic frontmatter,
-  auto-invocation triggers, decision rules, and quality-gate checklist.
-- **12 reference docs** (`references/`): charter, signal-model, metric-classes,
-  semantic-rules, naming-and-lifecycle, tagging-and-cardinality, cost-model,
-  emission-boundaries, failure-taxonomy, surface-patterns, enforcement,
-  review-rubric.
-- **Python reference implementation** (`examples/python/`) — 11 drop-in
-  modules: `metric_def.py`, `metric_tags.py`, `failure_taxonomy.py`,
-  `emission_module.py`, `http_middleware.py`, `external_api_client.py`,
-  `workflow_decorator.py`, `retry_loop.py`, `fallback_path.py`, `ci_gate.py`,
-  `test_gates.py`.
-- **Seven installation adapters** (`adapters/`): Claude Code, Claude.ai web,
-  Cursor, Codex, Aider, Continue, Windsurf.
-- **CI gate** with 13 AST-based checks enforcing metric identity, naming,
-  tagging, lifecycle, cardinality, loop policy, and dynamic-name rules.
-- **README.md** — value pitch, quick start, category overview, CI gate demo,
-  gotchas, roadmap.
-- **MIT LICENSE** — copyright 2026 Torta Studios.
-
-### Notes
-
-- Tested against `sentry-sdk>=2.0` (Python) as of April 2026. Sentry Metrics
-  is still in open beta and has had pricing/API churn; pin an SDK version
-  and watch Sentry's changelog.
-- Python 3.11+ required for the reference examples (`StrEnum`, union type
-  syntax).
+- Removed inherited vendor-specific instrumentation rules and obsolete AWS X-Ray SDK/embedded-collector recommendations; AWS-compatible propagation remains implemented through OpenTelemetry.

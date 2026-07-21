@@ -1,202 +1,108 @@
-"""HTTP observability middleware — the Starlette/FastAPI reference.
+"""ASGI metrics middleware for projects without standard HTTP metrics.
 
-Drop-in at `yourapp/middleware/observability.py`. Emits per-request
-Sentry metrics (count, duration, conditional failure count) tagged
-with method, route-name, HTTP status class (via `status_code_class()`),
-and client type (from `request.state.auth` populated by the auth
-dependency).
-
-Consumers get full HTTP-route coverage by adding the middleware to
-the app — never hand-roll these emissions in route handlers.
-
-    app.add_middleware(ObservabilityMiddleware)
-
-> Framework note: this reference uses `starlette.middleware.base`.
-> The same triad applies in every HTTP framework — Django middleware,
-> Flask `before_request`/`after_request`, Express/Koa middleware,
-> Rails `ActionDispatch` middleware, Phoenix plugs. Preserve the
-> triad; swap only the framework glue.
+Prefer the framework's OTel instrumentation when it already emits the standard
+HTTP server metrics. Do not install this middleware alongside duplicate metrics.
 """
 
 from __future__ import annotations
 
-import logging
 import time
-from typing import Any
 
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.types import ASGIApp
 
-from yourapp.observability import emit_counter, emit_latency
-from yourapp.shared.metric_tags import status_code_class
-from yourapp.shared.metrics import MetricDef
+from .emission_module import MetricEmitter
+from .failure_taxonomy import classify
+from .metric_def import MetricDef
+from .metric_tags import status_code_class
 
-logger = logging.getLogger(__name__)
+METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "OTHER"})
+ROUTES = frozenset({"/users", "/orders", "/orders/{order_id}", "_unmatched"})
+STATUS_CLASSES = frozenset({"1xx", "2xx", "3xx", "4xx", "5xx", "other"})
 
-# ---- Metric definitions ----------------------------------------------------
-
-# Three metrics — count, duration, conditional failure count. The
-# triad is the required emission set for the HTTP-route surface per
-# the coverage table in `references/surface-patterns.md`.
-
-API_REQUEST_COUNT = MetricDef.counter(
-    "api.request.count",
+HTTP_REQUESTS = MetricDef.counter(
+    "app.http.server.request",
     purpose="outcome",
     owner="platform",
-    means=(
-        "HTTP request observed by the middleware. Divide "
-        "api.request.failure.count / api.request.count per (route, method) "
-        "for the per-route failure rate."
-    ),
-    tags={
-        "method": frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}),
-        "route": "route_name",        # validated via `_route_name_for_tagging`
-        "status_class": "status_code_class",
-        "client_type": frozenset({"user", "service", "anonymous"}),
+    means="Completed inbound HTTP requests at the ASGI boundary.",
+    unit="{request}",
+    attributes={
+        "http.request.method": METHODS,
+        "http.route": ROUTES,
+        "http.response.status_class": STATUS_CLASSES,
     },
+    required=frozenset({"http.request.method", "http.route", "http.response.status_class"}),
     emit_frequency="per_request",
-    max_rate_hz=1000.0,
 )
-
-API_REQUEST_DURATION = MetricDef.latency(
-    "api.request.duration",
+HTTP_DURATION = MetricDef.latency(
+    "app.http.server.request.duration",
     owner="platform",
-    means="Wall-clock duration of an HTTP request, measured around call_next.",
-    tags={
-        "method": frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}),
-        "route": "route_name",
-        "status_class": "status_code_class",
-        "client_type": frozenset({"user", "service", "anonymous"}),
+    means="Elapsed time for completed inbound HTTP requests.",
+    attributes={
+        "http.request.method": METHODS,
+        "http.route": ROUTES,
+        "http.response.status_class": STATUS_CLASSES,
     },
+    required=frozenset({"http.request.method", "http.route", "http.response.status_class"}),
     emit_frequency="per_request",
-    sampling_rate=1.0,
-    max_rate_hz=1000.0,
 )
-
-API_REQUEST_FAILURES = MetricDef.failure_counter(
-    "api.request.failure.count",
+HTTP_FAILURES = MetricDef.failure_counter(
+    "app.http.server.request.failure",
     owner="platform",
-    means=(
-        "Failed HTTP requests — either 4xx/5xx response or unhandled "
-        "exception. Tagged by the failure class produced by classify()."
-    ),
-    tags={
-        "method": frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}),
-        "route": "route_name",
-        "status_class": "status_code_class",
+    means="Inbound HTTP requests that terminated with an application exception.",
+    attributes={
+        "http.request.method": METHODS,
+        "http.route": ROUTES,
     },
+    required=frozenset({"http.request.method", "http.route"}),
     emit_frequency="per_request",
-    max_rate_hz=1000.0,
 )
 
 
-# ---- Middleware ------------------------------------------------------------
+def _route_template(request: Request) -> str:
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    return path if path in ROUTES else "_unmatched"
 
 
 class ObservabilityMiddleware(BaseHTTPMiddleware):
-    """Per-request emission to Sentry Metrics.
+    def __init__(self, app: object, *, emitter: MetricEmitter) -> None:
+        super().__init__(app)  # type: ignore[arg-type]
+        self.emitter = emitter
 
-    Sentry tags are low-cardinality: method, route (from Starlette's
-    matched route name), status-code class, client_type.
-    """
-
-    async def dispatch(self, request: Request, call_next: Any) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         started = time.monotonic()
+        method = request.method if request.method in METHODS else "OTHER"
+        response: Response | None = None
         try:
-            response: Response = await call_next(request)
-        except Exception as exc:
-            elapsed_ms = (time.monotonic() - started) * 1000.0
-            logger.exception("Unhandled exception in request")
-            self._record(
-                request=request,
-                status_code=500,
-                elapsed_ms=elapsed_ms,
-                exception=exc,
+            response = await call_next(request)
+            return response
+        except BaseException as exc:
+            self.emitter.emit_failure(
+                HTTP_FAILURES,
+                failure=classify(exc),
+                attributes={
+                    "http.request.method": method,
+                    "http.route": _route_template(request),
+                },
             )
             raise
-        elapsed_ms = (time.monotonic() - started) * 1000.0
-        self._record(
-            request=request,
-            status_code=response.status_code,
-            elapsed_ms=elapsed_ms,
-            exception=None,
-        )
-        return response
-
-    def _record(
-        self,
-        *,
-        request: Request,
-        status_code: int,
-        elapsed_ms: float,
-        exception: BaseException | None,
-    ) -> None:
-        tags = {
-            "method": request.method,
-            "route": _route_name_for_tagging(request),
-            "status_class": status_code_class(status_code),
-            "client_type": _client_type(request),
-        }
-        emit_counter(API_REQUEST_COUNT, tags=tags)
-        emit_latency(API_REQUEST_DURATION, duration_ms=elapsed_ms, tags=tags)
-
-        if status_code >= 400 or exception is not None:
-            # Drop client_type from the failure counter — not in its
-            # allowed_tags (status_class carries the useful signal).
-            failure_tags = {
-                "method": tags["method"],
-                "route": tags["route"],
-                "status_class": tags["status_class"],
+        finally:
+            status = response.status_code if response is not None else 500
+            attributes = {
+                "http.request.method": method,
+                "http.route": _route_template(request),
+                "http.response.status_class": status_code_class(status),
             }
-            from yourapp.shared.failure_taxonomy import FailureClass, classify
-
-            failure = classify(exception) if exception else _failure_from_status(status_code)
-            from yourapp.observability import emit_failure
-
-            emit_failure(API_REQUEST_FAILURES, failure=failure, tags=failure_tags)
-
-
-def _route_name_for_tagging(request: Request) -> str:
-    """Return the matched route's `name`, never the raw URL.
-
-    Starlette populates `request.scope["route"]` with the matched
-    `APIRoute`/`Route`. Its `.name` is a stable string the app owns;
-    the URL path carries path params (PII risk, cardinality blowup).
-    Unmatched routes (middleware firing on 404) fall back to a
-    bucketed label.
-    """
-
-    route = request.scope.get("route")
-    name = getattr(route, "name", None)
-    if name:
-        return str(name)
-    return "unmatched"
+            self.emitter.emit_counter(HTTP_REQUESTS, attributes=attributes)
+            self.emitter.emit_latency(
+                HTTP_DURATION,
+                duration_seconds=time.monotonic() - started,
+                attributes=attributes,
+            )
 
 
-def _client_type(request: Request) -> str:
-    auth = getattr(request.state, "auth", None)
-    if auth is None:
-        return "anonymous"
-    return getattr(auth, "client_type", "user")
-
-
-def _failure_from_status(status_code: int) -> "FailureClass":
-    """Best-effort FailureClass from the HTTP status code."""
-
-    from yourapp.shared.failure_taxonomy import FailureClass
-
-    if status_code == 401:
-        return FailureClass.AUTH_FAILURE
-    if status_code == 403:
-        return FailureClass.AUTH_FAILURE
-    if status_code == 404:
-        return FailureClass.VALIDATION_FAILURE
-    if status_code == 408:
-        return FailureClass.TIMEOUT
-    if status_code == 429:
-        return FailureClass.RATE_LIMITED
-    if 500 <= status_code < 600:
-        return FailureClass.INTERNAL_ERROR
-    return FailureClass.UNKNOWN
+__all__ = ["ObservabilityMiddleware"]

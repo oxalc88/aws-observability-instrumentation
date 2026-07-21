@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sentry-instrumentation installer — one command per agent.
+# cloudwatch-instrumentation installer - one command per agent.
 #
 # Usage:
 #   scripts/install.sh --agent=<name> [--project=<path>] [--skill-clone=<path>]
@@ -18,14 +18,14 @@ SKILL_CLONE=""
 
 usage() {
     cat <<'EOF'
-sentry-instrumentation installer
+cloudwatch-instrumentation installer
 
 Usage:
   scripts/install.sh --agent=<name> [--project=<path>] [--skill-clone=<path>]
 
 Agents:
   claude-code   symlink into ~/.claude/skills/ (or <project>/.claude/skills/)
-  cursor        write <project>/.cursor/rules/sentry-instrumentation.mdc
+  cursor        write <project>/.cursor/rules/cloudwatch-instrumentation.mdc
   codex         insert skill-enable block into <project>/AGENTS.md
   aider         write <project>/CONVENTIONS.md
   continue      write <project>/.continuerules
@@ -77,6 +77,10 @@ fi
 MINIMAL_CONCAT_FILES=(
     "$SKILL_CLONE/SKILL.md"
     "$SKILL_CLONE/references/charter.md"
+    "$SKILL_CLONE/references/cloudwatch-otlp.md"
+    "$SKILL_CLONE/references/deployment-targets.md"
+    "$SKILL_CLONE/references/structured-logging.md"
+    "$SKILL_CLONE/references/investigation-playbooks.md"
     "$SKILL_CLONE/references/signal-model.md"
     "$SKILL_CLONE/references/tagging-and-cardinality.md"
     "$SKILL_CLONE/references/surface-patterns.md"
@@ -100,9 +104,9 @@ concat_minimal() {
 install_claude_code() {
     local target
     if [[ "$PROJECT_EXPLICIT" -eq 1 ]]; then
-        target="${PROJECT}/.claude/skills/sentry-instrumentation"
+        target="${PROJECT}/.claude/skills/cloudwatch-instrumentation"
     else
-        target="${HOME}/.claude/skills/sentry-instrumentation"
+        target="${HOME}/.claude/skills/cloudwatch-instrumentation"
     fi
     mkdir -p "$(dirname "$target")"
     if [[ -L "$target" ]]; then
@@ -132,12 +136,12 @@ install_concat() {
 install_cursor() {
     local header
     header='---
-description: Sentry instrumentation rules — see sentry-instrumentation skill
-globs: **/*.py
+description: Governed OpenTelemetry for CloudWatch - see cloudwatch-instrumentation skill
+globs: "**/*.{ts,tsx,js,mjs,cjs,py}"
 alwaysApply: true
 ---
 '
-    install_concat ".cursor/rules/sentry-instrumentation.mdc" "$header"
+    install_concat ".cursor/rules/cloudwatch-instrumentation.mdc" "$header"
 }
 
 install_aider() {
@@ -154,26 +158,29 @@ install_windsurf() {
 
 install_codex() {
     local out="${PROJECT}/AGENTS.md"
-    local begin="<!-- BEGIN sentry-instrumentation -->"
-    local end="<!-- END sentry-instrumentation -->"
+    local begin="<!-- BEGIN cloudwatch-instrumentation -->"
+    local end="<!-- END cloudwatch-instrumentation -->"
     local block
     block="$(cat <<EOF
 $begin
-## Sentry instrumentation
+## CloudWatch OpenTelemetry instrumentation
 
-This project uses the \`sentry-instrumentation\` skill. When writing code
-that emits a Sentry metric, measures duration, counts failures, wraps a
-workflow step, or adds a retry or fallback path:
+This project uses the \`cloudwatch-instrumentation\` skill. When writing code
+that emits an OpenTelemetry metric or trace, writes an application log for
+CloudWatch, measures duration, counts failures, investigates production
+telemetry, or changes an AWS telemetry deployment:
 
 1. Read \`$SKILL_CLONE/SKILL.md\`.
 2. Follow its decision rules and surface patterns.
 3. For deeper rules (tagging, cost model, lifecycle), open the relevant
    file under \`$SKILL_CLONE/references/\`.
-4. Use \`$SKILL_CLONE/examples/python/\` as the canonical drop-in
-   reference.
+4. Use \`$SKILL_CLONE/examples/typescript/\` as the canonical Node.js
+   reference. Python examples are secondary parity examples.
 
-Never hand-roll emissions — use the surface patterns (middleware,
-decorator, base class). Never pass a raw string to an emit helper.
+Keep AWS authentication in the collector or runtime configuration. Never
+attach unbounded identifiers or exception text to metric attributes. Use only
+governed structured logs; never log credentials, session values, bodies,
+prompts, or raw errors.
 $end
 EOF
 )"

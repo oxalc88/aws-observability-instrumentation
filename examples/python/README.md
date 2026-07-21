@@ -1,98 +1,41 @@
-# Python reference implementation
+# Python parity examples
 
-This directory is the **canonical reference** for the
-`sentry-instrumentation` skill. Every rule in `references/` has a
-concrete Python drop-in here.
+These examples implement the same language-agnostic three-signal contracts as the canonical Node.js code in `examples/typescript/`. They demonstrate that metric names, attributes, failure classes, lifecycle rules, and OTLP export topology do not depend on an application language.
 
-Ports to other languages (TypeScript v0.2, Go v0.3, …) preserve the
-shapes in this directory — same constructors, same 13 CI checks,
-same `FailureClass` taxonomy — under idiomatic names.
+Use Python 3.11 or newer:
 
-Most modules here are **metrics** governance. `ai_agent_spans.py` is the
-first **tracing** module — `gen_ai.*` spans for AI agent conversations.
-The `gen_ai.*` attribute names are Sentry product contract, so they port
-verbatim to any language (only the span-API calls change). See
-`../../references/ai-agent-conversations.md`.
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install -r examples/python/requirements.txt pytest
+python -m pytest -q examples/python
+python examples/python/ci_gate.py examples/typescript/src examples/python config
+```
 
-## Drop-in mapping
+Key files:
 
-Copy each file to the target path in your project, then rename
-`yourapp` to your package root.
+| File | Purpose |
+| --- | --- |
+| `metric_def.py` | Immutable metric contracts and constructors |
+| `emission_module.py` | OTel providers, histogram views, and validated emission |
+| `structured_logging.py` | Structured event schemas, JSON, correlation, and safety controls |
+| `correlation_context.py` | Validated active business-workflow correlation context |
+| `workflow_propagation.py` | Generic OTel and business-correlation text carrier |
+| `http_middleware.py` | ASGI boundary instrumentation |
+| `external_api_client.py` | External HTTP dependency instrumentation |
+| `workflow_decorator.py` | Workflow-step instrumentation |
+| `retry_loop.py` | Bounded retry metrics |
+| `fallback_path.py` | Governed fallback metrics |
+| `ai_agent_spans.py` | OTel GenAI spans |
+| `lambda_handler.py` | Lambda cold-start reuse and bounded flush |
+| `sqs_workflow.py` | SQS carrier quota, producer links, and per-record consumer spans |
+| `sqs_lambda_handler.py` | SQS partial-batch failures, correlated logs/metrics, and bounded flush |
+| `kinesis_workflow.py` | Versioned Kinesis envelope, size validation, and per-record spans |
+| `kinesis_lambda_handler.py` | Kinesis batch, correlated logs/metrics, and bounded flush |
+| `ci_gate.py` | Shared Python/TypeScript/JavaScript contract checks |
 
-| Example file | Target path | Purpose |
-|---|---|---|
-| `metric_def.py` | `yourapp/shared/metrics.py` | `MetricDef` schema + 5 classmethod constructors + `REGISTRY` set |
-| `metric_tags.py` | `yourapp/shared/metric_tags.py` | Approved bucket functions (`status_code_class`, `size_bucket`, `count_bucket`, `attempt_bucket`, `bool_tag`) |
-| `failure_taxonomy.py` | `yourapp/shared/failure_taxonomy.py` | `FailureClass` enum + `classify()` + `register()` |
-| `emission_module.py` | `yourapp/observability.py` | `init_sentry` + validating `emit_*` helpers + `AggregatingCounter` / `DurationAccumulator` |
-| `http_middleware.py` | `yourapp/middleware/observability.py` | `ObservabilityMiddleware` (Starlette/FastAPI) |
-| `external_api_client.py` | `yourapp/services/providers/instrumented_http_client.py` | `InstrumentedHttpClient` base class (httpx) |
-| `workflow_decorator.py` | `yourapp/services/<workflow>/instrumentation.py` | `@instrumented_step` decorator |
-| `retry_loop.py` | `yourapp/services/retry.py` | `retry_with_instrumentation` async iterator |
-| `fallback_path.py` | `yourapp/observability.py` or `yourapp/shared/fallback.py` | `record_fallback(metric, reason=...)` |
-| `ai_agent_spans.py` | `yourapp/observability/ai_spans.py` | `gen_ai.*` tracing for AI agent conversations (`invoke_agent` / `chat` / `execute_tool` spans + `set_conversation_id`) |
-| `ci_gate.py` | `scripts/check_metrics.py` | 13-check AST gate |
-| `test_gates.py` | `tests/test_observability_gates.py` | Contract-level pytest cases |
+AWS credentials and CloudWatch endpoints belong in the collector or deployment configuration. Application modules should normally send OTLP to a local or runtime-provided endpoint. Structured logs normally use the runtime's stdout delivery path; do not add an OTLP log exporter unless that path is selected deliberately and duplicate platform collection is removed.
 
-## Dependency footprint
+The Python logger preserves the canonical Node schema for terminal failures: `metric.name`, `operation.name`, `exception.type`, the innermost `code.*` frame, and active trace IDs, without exception messages or full tracebacks. It also implements the same ordered deterministic sampling rules, managed `sampling.policy`/`sampling.rate` fields, and locked error/security retention.
 
-Required:
-
-- `sentry-sdk>=2.0` (Sentry Metrics API)
-
-Optional — only if you use the matching surface pattern:
-
-- `starlette` — for `http_middleware.py` (also works under FastAPI,
-  which uses Starlette internally)
-- `httpx` — for `external_api_client.py`
-
-All other examples are pure-stdlib Python.
-
-`ai_agent_spans.py` needs **tracing enabled** in `sentry_sdk.init`
-(`traces_sample_rate` or a `traces_sampler`) — conversations are built
-from spans. The conversation-id helper wraps the beta `sentry_sdk.ai`
-API and degrades to a no-op on SDKs that predate it.
-
-Python runtime: **3.11+**. The examples use `StrEnum` (added in
-3.11) and PEP-604 union syntax (`X | Y`). For 3.10 support, swap
-`StrEnum(str, Enum)` equivalents and import `Optional[T]` / `Union[A,
-B]` from `typing`.
-
-## Sentry Metrics API — version caveat
-
-The examples call `sentry_sdk.metrics.count / gauge / distribution`.
-Sentry Metrics has moved through beta and had pricing / API
-adjustments since 2024. Before shipping:
-
-1. Check your installed `sentry-sdk` version supports the API surface
-   used here.
-2. Re-verify the current pricing in your Sentry organization settings
-   — distribution volume is the primary cost driver, so the
-   `sampling_rate` / `max_rate_hz` knobs on each `MetricDef` exist
-   precisely to keep that bill bounded.
-
-**Reference version:** `sentry-sdk==2.x` as of April 2026. If you're
-on a newer version that renamed the API, preserve the validating-
-helper contract in `emission_module.py` (the only place that touches
-the raw SDK) and update one module.
-
-## Why Python first
-
-The skill was reverse-engineered from a Python codebase where the
-governance grew organically and was then formalized. Python's
-runtime type checks + `ast` module let the helper API and CI gate
-enforce the same rules at different layers — the examples shipped
-here are exactly what's running in production at Torta Studios.
-
-The rules translate directly to other languages (TypeScript's
-`ts-morph`, Go's `go/ast`, Ruby's `parser`). Only the syntax changes;
-the grammar, shapes, and enforcement surface stay identical. That's
-why the rules live in `references/` as prose and the language-
-specific drop-in here can be replaced or supplemented without
-touching the canonical rules.
-
-## See also
-
-- `../../SKILL.md` — the contract the agent reads
-- `../../references/` — the 12 deep-dive docs
-- `../../adapters/` — per-agent install notes
+The Python SQS adapter has functional parity with the TypeScript SQS example: it supports AWS `AWSTraceHeader` and W3C message-attribute extraction, validates one stable `correlation_id`, creates linked per-record consumer spans, returns partial-batch failures, and keeps logs and metrics correlated inside each record context. The Python Kinesis adapter has the same versioned envelope, conservative size preflight, producer-link, per-record context, and default all-or-retry batch behavior as TypeScript. Future transport adapters must preserve the transport-neutral contract in `references/async-trace-propagation.md`.

@@ -1,0 +1,67 @@
+{
+  "family": "replace-me-cloudwatch-otel",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "taskRoleArn": "arn:aws:iam::111122223333:role/replace-me-otel-task-role",
+  "executionRoleArn": "arn:aws:iam::111122223333:role/replace-me-ecs-execution-role",
+  "containerDefinitions": [
+    {
+      "name": "application",
+      "image": "111122223333.dkr.ecr.us-east-1.amazonaws.com/replace-me-app:tested-version",
+      "essential": true,
+      "dependsOn": [
+        {
+          "containerName": "otel-collector",
+          "condition": "HEALTHY"
+        }
+      ],
+      "environment": [
+        { "name": "OTEL_SERVICE_NAME", "value": "replace-me-service" },
+        { "name": "DEPLOYMENT_ENVIRONMENT", "value": "production" },
+        { "name": "LOG_LEVEL", "value": "INFO" },
+        { "name": "OTEL_EXPORTER_OTLP_ENDPOINT", "value": "http://127.0.0.1:4318" },
+        { "name": "OTEL_EXPORTER_OTLP_PROTOCOL", "value": "http/protobuf" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/replace-me-application",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "app"
+        }
+      }
+    },
+    {
+      "name": "otel-collector",
+      "image": "111122223333.dkr.ecr.us-east-1.amazonaws.com/replace-me-collector:tested-version",
+      "essential": true,
+      "cpu": 128,
+      "memoryReservation": 256,
+      "environment": [
+        { "name": "OTEL_MEMORY_LIMIT_MIB", "value": "192" }
+      ],
+      "portMappings": [
+        { "containerPort": 4317, "protocol": "tcp" },
+        { "containerPort": 4318, "protocol": "tcp" },
+        { "containerPort": 13133, "protocol": "tcp" }
+      ],
+      "healthCheck": {
+        "command": ["CMD", "/healthcheck"],
+        "interval": 10,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 10
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/replace-me-otel-collector",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "collector"
+        }
+      }
+    }
+  ]
+}

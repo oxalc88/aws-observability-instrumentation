@@ -1,0 +1,42 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  bearertokenauth/metrics:
+    filename: /run/secrets/cloudwatch-metrics-token
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 32
+  batch:
+    send_batch_size: 200
+    send_batch_max_size: 1000
+    timeout: 10s
+
+exporters:
+  otlphttp/cloudwatch_metrics:
+    metrics_endpoint: https://monitoring.${env:AWS_REGION}.amazonaws.com/v1/metrics
+    compression: gzip
+    auth:
+      authenticator: bearertokenauth/metrics
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 5m
+    sending_queue:
+      enabled: true
+      queue_size: 1000
+
+service:
+  extensions: [health_check, bearertokenauth/metrics]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/cloudwatch_metrics]

@@ -1,0 +1,93 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  sigv4auth/metrics:
+    region: ${env:AWS_REGION}
+    service: monitoring
+  sigv4auth/traces:
+    region: ${env:AWS_REGION}
+    service: xray
+  sigv4auth/logs:
+    region: ${env:AWS_REGION}
+    service: logs
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: ${env:OTEL_MEMORY_LIMIT_MIB}
+    spike_limit_mib: 32
+  batch:
+    send_batch_size: 200
+    send_batch_max_size: 1000
+    timeout: 10s
+
+exporters:
+  otlphttp/cloudwatch_metrics:
+    metrics_endpoint: https://monitoring.${env:AWS_REGION}.amazonaws.com/v1/metrics
+    compression: gzip
+    auth:
+      authenticator: sigv4auth/metrics
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 5m
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 1000
+  otlphttp/cloudwatch_traces:
+    traces_endpoint: https://xray.${env:AWS_REGION}.amazonaws.com/v1/traces
+    compression: gzip
+    auth:
+      authenticator: sigv4auth/traces
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 5m
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 1000
+  otlphttp/cloudwatch_logs:
+    logs_endpoint: https://logs.${env:AWS_REGION}.amazonaws.com/v1/logs
+    headers:
+      x-aws-log-group: ${env:CLOUDWATCH_LOG_GROUP}
+      x-aws-log-stream: ${env:CLOUDWATCH_LOG_STREAM}
+    compression: gzip
+    auth:
+      authenticator: sigv4auth/logs
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 5m
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 1000
+
+service:
+  extensions: [health_check, sigv4auth/metrics, sigv4auth/traces, sigv4auth/logs]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/cloudwatch_metrics]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/cloudwatch_traces]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/cloudwatch_logs]
