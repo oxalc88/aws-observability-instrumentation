@@ -9,6 +9,7 @@ from contextvars import ContextVar
 from uuid import uuid4
 
 from opentelemetry import trace
+from opentelemetry.context import Context
 
 _CORRELATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:/-]{1,128}$")
 _ACTIVE_CORRELATION_ID: ContextVar[str | None] = ContextVar(
@@ -42,13 +43,16 @@ def use_correlation_id(correlation_id: str) -> Iterator[None]:
         _ACTIVE_CORRELATION_ID.reset(token)
 
 
-def resolve_correlation_id(candidate: str | None = None) -> str:
+def resolve_correlation_id(
+    candidate: str | None = None,
+    source_context: Context | None = None,
+) -> str:
     if candidate is not None:
         return validate_correlation_id(candidate)
     active_correlation_id = get_correlation_id()
     if active_correlation_id is not None:
         return active_correlation_id
-    span_context = trace.get_current_span().get_span_context()
+    span_context = trace.get_current_span(source_context).get_span_context()
     if span_context.is_valid:
         return trace.format_trace_id(span_context.trace_id)
     return str(uuid4())

@@ -48,7 +48,8 @@ def prepare_sqs_message_attributes(
         raise CorrelationContractError(
             "Refusing to overwrite an existing correlation_id"
         )
-    resolved = resolve_correlation_id(existing or correlation_id)
+    candidate = existing if existing is not None else correlation_id
+    resolved = resolve_correlation_id(candidate)
     prepared[SQS_CORRELATION_ATTRIBUTE] = {
         "DataType": "String",
         "StringValue": resolved,
