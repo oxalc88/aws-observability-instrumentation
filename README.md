@@ -4,7 +4,7 @@ A Node.js-first coding skill for three-pillar observability in Amazon CloudWatch
 
 The policy is language agnostic. TypeScript is the canonical Node.js implementation; Python maintains behavioral parity for the core metric, logging, tracing, Lambda lifecycle, SQS, and Kinesis contracts.
 
-This project is based on [Sentry Instrumentation](https://github.com/tortastudios/sentry-instrumentation), a skill that standardizes how application observability is instrumented. Credit for the contract-first approach and guidance on what to measure goes to the team at [Torta Studios](https://tortastudios.com/).
+This project is based on [Sentry Instrumentation](https://github.com/tortastudios/sentry-instrumentation), a skill that standardizes how application observability is instrumented. The fork baseline is upstream [`v1.2.0`](https://github.com/tortastudios/sentry-instrumentation/releases/tag/v1.2.0) at commit [`2beb602`](https://github.com/tortastudios/sentry-instrumentation/commit/2beb60282ec5acd7060b4efa60a29d1774784c85); CloudWatch releases follow an independent version line. Credit for the contract-first approach and guidance on what to measure goes to the team at [Torta Studios](https://tortastudios.com/).
 
 ## What it covers
 

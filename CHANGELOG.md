@@ -6,6 +6,8 @@ All notable changes to the `cloudwatch-instrumentation` skill are documented her
 
 ## [0.1.0] - 2026-07-21
 
+Initial CloudWatch/OpenTelemetry release, derived from `sentry-instrumentation` `v1.2.0` at commit `2beb602`. This project follows an independent version line from that baseline.
+
 ### Added
 
 - **TypeScript reference implementation** with runtime metric validation, histogram views, OTel auto-instrumentation, structured logging, HTTP/workflow surfaces, Lambda lifecycle handling, typechecking, and tests.
