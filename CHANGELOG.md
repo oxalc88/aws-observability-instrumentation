@@ -4,6 +4,10 @@ All notable changes to the `cloudwatch-instrumentation` skill are documented her
 
 ## [Unreleased]
 
+### Changed
+
+- Promoted agent installation to a complete Quick Start with clone, version-pinning, supported-agent, and adapter-specific guidance.
+
 ## [0.1.0] - 2026-07-21
 
 Initial CloudWatch/OpenTelemetry release, derived from `sentry-instrumentation` `v1.2.0` at commit `2beb602`. This project follows an independent version line from that baseline.
