@@ -1,136 +1,72 @@
 # Reusable surface patterns
 
-Canonical instrumentation ships as **drop-in code**, not as "write
-these emissions at each site". Each surface in the service has one
-entry in the registry (the `MetricDef` set) and one reusable pattern
-(middleware, decorator, context manager, base class) that bakes in
-the emission sites. Consumers write domain logic; instrumentation is
-not copy-pasted per site.
+Use the matching TypeScript or Python example and adapt its declared routes, dependencies, workflow steps, and failure mappings.
 
-## Surface coverage table
+## HTTP
 
-| Surface | Pattern | Required emissions (baked in) |
-|---|---|---|
-| HTTP route | `ObservabilityMiddleware` | request count, request duration, failure count tagged by status class |
-| External API client | `InstrumentedHttpClient` subclass | call count, call duration, failure count tagged by `failure_class`, rate-limit counter |
-| Workflow step | `@instrumented_step(stage_name)` decorator | duration (always), failure counter tagged by `failure_class` |
-| Queue worker | `instrumented_worker(queue_name)` | enqueue count, dequeue count, terminal outcome, in-flight gauge |
-| Retry loop | `retry_with_instrumentation(metric, max_attempts)` | attempt count tagged by `attempt_bucket`, terminal outcome |
-| Fallback path | `record_fallback(metric, reason=...)` | fallback count tagged with taxonomy value |
+Prefer OTel framework instrumentation. Use the custom HTTP wrapper only when standard metrics are absent or a separate business SLI is justified.
 
-Using the pattern is always less code than hand-rolling the
-emissions. That's the "correct path is the easiest path" guarantee.
+- span name uses method plus route template
+- metric attributes use method, route template, and status class
+- raw URL, query string, and request ID are forbidden metric attributes
+- duration records on every terminal path
 
-## 1. HTTP route — `ObservabilityMiddleware`
+Examples: `examples/typescript/src/http.ts`, `examples/python/http_middleware.py`.
 
-ASGI middleware. Timed at `call_next` enter/exit, tagged with method,
-route-name (from the matched `starlette.routing.Route.name`), HTTP
-status class (via `status_code_class()`), and client type (auth
-resolved from `request.state.auth`).
+## External HTTP dependency
 
-Wiring: add once to the app, emissions land for every route. See
-`examples/python/http_middleware.py` for a complete drop-in module.
+Centralize in a shared client:
 
-```python
-app.add_middleware(ObservabilityMiddleware)
-```
+- client span with stable dependency and operation name
+- bounded outcome counter
+- duration histogram
+- classified failure counter
+- response status on the span
 
-## 2. External API client — `InstrumentedHttpClient`
+Never use raw dependency URLs or response bodies as metric attributes.
 
-Base class wrapping `httpx.AsyncClient`. Subclass per dependency,
-override the request methods with the upstream API's semantics; the
-base emits per-call duration + outcome (tagged with `failure_class`
-from `classify(exc)`) + rate-limit counter.
+Example: `examples/python/external_api_client.py`. Port the same shape to the consumer Node HTTP client when needed.
 
-```python
-class ExternalApiClient(InstrumentedHttpClient):
-    dep_name = "external_api"
+## Workflow
 
-    async def fetch(self, value: str, *, kind: str) -> FetchResponse:
-        response = await self.request("GET", "/resources", params={...})
-        return FetchResponse.from_httpx(response)
-```
+Wrap the entire step with one span and duration histogram. Add `failure.class` once when the step terminates with an exception. Declare step values in a closed set.
 
-> Language note: the pattern (base class with pre/post-call emission
-> hooks) translates directly — in TypeScript, use an `axios`/`fetch`
-> wrapper that records the triad around the call. In Go, wrap
-> `http.RoundTripper`.
+Examples: `examples/typescript/src/workflow.ts`, `examples/python/workflow_decorator.py`.
 
-Consumers never touch `emit_*` for an API call. The base class
-handles the triad. See `examples/python/external_api_client.py`.
+## Retry
 
-## 3. Workflow step — `@instrumented_step(stage_name)`
+Emit one attempt counter per actual attempt only when the attempt distribution matters. Bucket attempt number and emit one terminal outcome. Classify only the terminal exhausted failure.
 
-Decorator applied to a workflow task (Hatchet, Celery, Temporal,
-Sidekiq, Inngest, BullMQ, or equivalent). Sits inside the workflow
-engine's own decorator so the engine sees the wrapped function:
+Do not label with arbitrary exception type or backoff duration.
 
-```python
-@workflow.task(retries=2, execution_timeout="5m")
-@instrumented_step(stages.INGEST)
-async def ingest(input, ctx):
-    ...
-```
+Example: `examples/python/retry_loop.py`.
 
-Emits `stage.duration` (always) + `stage.failure_count` tagged by
-`failure_class` (on exception, via `classify()`). Exception is
-re-raised after emission — the decorator is observational, not
-swallowing. See `examples/python/workflow_decorator.py`.
+## Fallback
 
-## 4. Retry loop — `retry_with_instrumentation`
+Call one helper at the decision point with a closed reason. A fallback is a correctness signal, not necessarily a failure.
 
-Async iterator + context manager that wraps a retry loop:
+Example: `examples/python/fallback_path.py`.
 
-```python
-async for attempt in retry_with_instrumentation(
-    metric=EXTERNAL_API_RETRY,
-    max_attempts=3,
-    tags={"endpoint": "list"},
-):
-    async with attempt:
-        return await client.fetch(...)
-```
+## Lambda
 
-Emits one counter per loop exit (tagged with `attempt_bucket` of the
-attempt index at termination + outcome from the terminal state).
-Aggregates via `AggregatingCounter` internally so the per-iteration
-path is zero emissions. See `examples/python/retry_loop.py`.
+Initialize telemetry and the logger before the handler module and reuse them across warm invocations. Let OTel Lambda auto-instrumentation own the invocation span; create only application operation or per-message spans in the handler. Keep `faas.invocation_id` as runtime identity and use a separate stable `correlation_id` for the business workflow. Never log the raw invocation event. Flush application-owned OTel metrics/traces within remaining time; platform-delivered stdout logs do not need that OTel flush. Do not shut down providers after each invocation.
 
-## 5. Fallback path — `record_fallback`
+Examples: `examples/typescript/src/lambda-bootstrap.ts`, `examples/typescript/src/lambda-handler.ts`, `examples/typescript/src/sqs-lambda-handler.ts`, `examples/typescript/src/kinesis-lambda-handler.ts`, `examples/python/lambda_handler.py`, and `examples/python/sqs_lambda_handler.py`.
 
-Single-call helper:
+## Asynchronous messaging
 
-```python
-record_fallback(PRIMARY_SIGNAL_FALLBACK, reason="primary_empty")
-```
+Use OTel propagators through a transport-specific carrier, carry one validated `correlation_id`, and use span links for batches or fan-out with multiple producer contexts. A per-message span gives logs one unambiguous active span. Enforce each transport's metadata count, byte-size, encoding, privacy, replay, and reserved-field rules.
 
-- `reason` is validated against the metric's
-  `tag_constraints["reason"]` set.
-- The helper is the *only* approved way to emit a fallback counter;
-  the CI gate rejects raw `emit_counter(..., tags={"reason": ...})`
-  against a metric that was registered as a fallback metric.
-- See `examples/python/fallback_path.py`.
+Examples: `examples/typescript/src/workflow-propagation.ts` for a generic text carrier, `examples/typescript/src/sqs-workflow.ts` and `examples/python/sqs_workflow.py` for SQS, and `examples/typescript/src/kinesis-workflow.ts` for a versioned Kinesis payload envelope. Other transports require their own thin adapter.
 
-## 6. Queue worker — `instrumented_worker`
+## Structured event
 
-Wraps the queue consumer loop: emits `enqueue.count` on receive,
-`dequeue.count` on ack, `outcome.count` tagged with `failure_class`
-on terminal, and maintains an in-flight gauge. Not included as a
-standalone example module — typical integrations (Hatchet, Celery,
-RQ, Sidekiq, BullMQ, SQS, Redis streams) look slightly different.
-Extend `InstrumentedHttpClient`'s triad pattern to the consumer
-loop.
+Create a `LogEventDef` with a fixed message and declared fields. Emit it at the terminal boundary, not throughout helper layers. Mark security-required events explicitly, and use a separate audit stream when compliance needs independent retention or immutability. Apply ordered deterministic sampling only through bounded event properties and retain errors/security at `1.0`.
 
-## Adding a new surface pattern
+Examples: `examples/typescript/src/log-event.ts`, `examples/typescript/src/structured-logger.ts`, and `examples/python/structured_logging.py`.
 
-A new pattern earns its place when you've hand-rolled the same
-emission triad three times across the codebase. Propose it in the PR
-that adds the third copy:
+## GenAI
 
-1. Name it `Instrumented<Noun>` (base class) or `@instrumented_<noun>`
-   (decorator) for consistency.
-2. Declare its `MetricDef` set in one place — tests can assert on
-   existence.
-3. Write a drop-in example module parallel to the ones in
-   `examples/`.
-4. Update this file + the coverage table.
+Create `invoke_agent`, `chat`, and `execute_tool` spans following current OTel GenAI conventions. Conversation IDs and content never become metric attributes. Content capture is explicit and subject to redaction and retention policy.
+
+Examples: `references/ai-agent-conversations.md`, `examples/python/ai_agent_spans.py`.

@@ -1,115 +1,71 @@
-# Tagging and cardinality policy
+# Attributes and cardinality
 
-Sentry charges (directly in ingest + indirectly in alert-rule
-matchability) for every distinct tag tuple. A single unbounded tag
-blows up the series count, pollutes dashboards with per-user noise,
-and leaks PII through what looked like a harmless label.
+CloudWatch native OTLP accepts many labels, but every unique metric name and complete label tuple is a time series. Service limits are ceilings, not a reason to attach arbitrary context.
 
-## Forbidden tag keys and values
+## Never use as metric attributes
 
-Never use as either a tag key or a tag value:
+- user, account, tenant, device, request, trace, span, session, or conversation IDs
+- email addresses, IP addresses, or authorization data
+- raw URL paths, full URLs, query strings, SQL text, or object keys
+- exception messages, stack traces, or arbitrary exception class names
+- prompt, completion, tool input, or tool output content
+- timestamps, commit hashes, container IDs, task ARNs, pod UIDs, or generated names copied from the runtime
 
-- User/entity ids: `user_id`, `creator_id`, `run_id`, `request_id`,
-  `trace_id`, `session_id`, `account_id`.
-- URL-level data: URL path parameters, the raw URL, query strings.
-- Freeform strings: prompt text, LLM output, any field that could
-  contain user-typed content.
-- Exception data: `str(exception)`, `repr(exception)`, stack frames,
-  `type(exc).__name__` (use `FailureClass.classify()` instead).
-- Dated model/version strings: major versions like
-  `"claude-opus-4-6"` or `"gpt-4"` are fine as a closed enumeration,
-  but `"claude-opus-4-6-20251001"` or `"model-v2-20260401"` is not —
-  date-suffixed versions inflate the series count every release.
-  Strip the date (or use a bucket function) before tagging.
-- Timestamps, file paths, IP addresses.
+Runtime identity may be present as resource attributes supplied by a detector or AWS enrichment. Do not duplicate it as a custom data-point attribute.
 
-The CI gate greps for these literals in `tag_constraints` and call
-sites.
+## Approved value shapes
 
-## Approved tag value shapes
+1. A closed enum documented in `MetricDef`:
 
-Exactly two shapes allowed:
-
-### Enumerated strings
-
-List every allowed value explicitly in
-`MetricDef.tag_constraints`:
-
-```python
-tags={"cache_status": frozenset({"hit", "miss", "skipped", "error"})}
+```ts
+attributes: {
+  outcome: new Set(["success", "failure"]);
+}
 ```
 
-### Approved bucket functions
+2. A route template from the framework router, never `request.url`:
 
-The bucket functions live in `yourapp/shared/metric_tags.py`. Each
-is total (never raises), returns a string from a small finite set,
-and is documented in `examples/python/metric_tags.py`.
-
-| Function | Returns | Use for |
-|---|---|---|
-| `status_code_class(code)` | `"1xx" \| "2xx" \| "3xx" \| "4xx" \| "5xx" \| "other"` | HTTP response status |
-| `size_bucket(num_bytes)` | `"0_1kb" \| "1_10kb" \| "10_100kb" \| "100kb_1mb" \| "1mb_plus"` | payload sizes |
-| `count_bucket(n)` | `"0" \| "1-9" \| "10-49" \| "50+"` | collection sizes, result counts |
-| `attempt_bucket(n)` | `"1" \| "2" \| "3-5" \| "6+"` | retry-loop attempt indices |
-| `bool_tag(b)` | `"true" \| "false"` | boolean-valued tags |
-
-Call sites pass the raw value through the bucket at emission time:
-
-```python
-emit_counter(
-    API_REQUEST_COUNT,
-    tags={"status_class": status_code_class(response.status_code)},
-)
+```text
+/orders/{order_id}
 ```
 
-The `MetricDef.tag_constraints` entry for that key stores either the
-full enumerated set, or the string name of the bucket function. The
-validator resolves both shapes.
+3. An approved bucket function:
 
-## Cardinality classes
+```text
+status_code_class: 2xx | 3xx | 4xx | 5xx | other
+attempt_bucket:    1 | 2 | 3-5 | 6+
+size_bucket:       0_1kb | 1_10kb | 10_100kb | 100kb_1mb | 1mb_plus
+```
 
-### `low` (default)
+4. A stable operation name declared in code, such as `create_order` or `publish_invoice`.
 
-- ≤ 20 distinct tag combinations in practice.
-- No justification required.
-- Every tag value is enumerated or bucketed.
+## Resource attributes
 
-### `medium`
+Use the resource for stable identity:
 
-- ≤ ~200 distinct tag combinations.
-- Requires `cardinality="medium"` on the `MetricDef` **and** a
-  justification paragraph in `means=` explaining why the dimensional
-  explosion is worth paying for.
-- Reviewer red flag; CI gate requires the justification.
+```text
+service.name
+service.version
+deployment.environment.name
+cloud.provider
+cloud.region
+cloud.platform
+```
 
-### `high`
+Use OTel resource detectors and AWS enrichment for ECS, EKS, EC2, and Lambda metadata. Avoid per-request metadata service calls.
 
-- Forbidden by the charter. If you think you need high-cardinality
-  tags, you probably want a log line (routed to Sentry via the
-  `LoggingIntegration`) or a trace span (via `sentry_sdk.trace(...)`),
-  not a metric.
+## Cardinality budget
 
-## Adding a new bucket function
+Before adding an attribute, multiply the maximum values of all attributes. A metric with 8 routes, 7 methods, 6 status classes, 3 environments, and 5 versions can create 5,040 active series before runtime enrichment.
 
-Bucket functions are a controlled vocabulary — adding one is a
-deliberate change, not a one-off convenience:
+Use these project defaults:
 
-1. The new bucket resolves an otherwise-unbounded input (e.g.,
-   floats, durations, external-service response codes) into ≤ ~10
-   values.
-2. It's documented in `yourapp/shared/metric_tags.py` (or the
-   language's equivalent module) with its enumeration spelled out in
-   the docstring.
-3. It's referenced from this file (`tagging-and-cardinality.md`) in a
-   follow-up PR so the skill stays accurate.
+- low cardinality: at most 50 intended combinations per service and version
+- medium cardinality: at most 500 intended combinations with a documented query need
+- above 500: require an explicit cost and query review
 
-## Anti-patterns caught by the CI gate
+CloudWatch may enrich resources with additional labels. Include that effect in volume and query testing.
 
-1. `tags={"user_id": auth.user_id}` — forbidden key.
-2. `tags={"route": request.url.path}` — raw URL path.
-3. `tags={"error": str(exc)}` — raw exception string.
-4. `tags={"model": f"modelname-{date_suffix}"}` — unbounded string.
-5. A tag key in the emission that isn't in `MetricDef.allowed_tags`.
-6. A tag value outside the enumeration in `tag_constraints` (if
-   enumerated) or not produced by the referenced bucket function (if
-   bucket-function-constrained).
+## Spans and logs
+
+High-cardinality debugging context normally belongs on a span or governed structured log, subject to privacy and retention policy. This is not permission to record sensitive data automatically. Log fields must be declared and classified; credentials, session values, bodies, and GenAI content remain excluded from the operational stream by default. Read `structured-logging.md`.

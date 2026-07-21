@@ -1,100 +1,79 @@
-# PR review rubric
+# Review rubric
 
-Walk this list for any PR that touches instrumentation. Copy into the
-PR template or a local checklist.
+## Destination
 
-## Kind and shape
+- Is this native OTLP/PromQL or classic/EMF?
+- Does exactly one pipeline own the metric?
+- Is OTLP/HTTP used for direct CloudWatch endpoints?
+- Is SigV4 or bearer authentication outside business instrumentation?
+- Does exactly one path own each log record: platform stdout/file collection or an OTel bridge?
 
-1. **Right `kind` for the meaning?**
-   - Counting discrete events → `counter`.
-   - Sampled duration → `distribution` (via `MetricDef.latency`).
-   - Currently-occupied quantity → `gauge`.
-2. **Name matches the contract?**
-   - `<domain>.<object>.<action>[.<type-suffix>]`, lowercase, dotted.
-   - No runtime concatenation — literal string.
-   - Fits one of the five `purpose` values.
+## Semantics
 
-## Tagging
+- Does a standard OTel semantic convention already cover the signal?
+- Is the instrument kind correct?
+- Is the UCUM unit correct?
+- Are histogram boundaries aligned to operating thresholds?
+- Does the description state exactly what increments or records?
 
-3. **All tag keys in `MetricDef.allowed_tags`?**
-4. **All tag values enumerated in `tag_constraints` or produced by an
-   approved bucket function?**
-5. **No forbidden values?** (user ids, URLs, raw exception strings,
-   timestamps, versioned model names, IPs, file paths)
+## Attributes
 
-## Duplication
+- Are all data-point attributes declared and bounded?
+- Are route values templates rather than raw paths?
+- Are resource identity fields on the resource?
+- Are IDs, exception messages, content, and secrets absent from metric attributes?
+- Is projected cardinality documented and acceptable after AWS enrichment?
 
-6. **Duplicative with an existing `MetricDef`?** Grep the registry
-   before adding. If a similar metric already exists, extend it (if
-   the identity tuple fits) or version it (`.v2`) with a migration
-   plan — don't invent a parallel name.
+## Ownership
 
-## Operational clarity
+- Is the signal emitted at one lifecycle boundary?
+- Is duration measured with a monotonic clock and recorded on failure?
+- Is a failure counted once with a bounded `failure.class`?
+- Are instruments reused rather than created per request?
+- Is each structured event emitted once at the boundary that knows its terminal outcome?
 
-7. **`operational_meaning` unambiguous?** Ask: will somebody reading
-   this metric in six months, without PR context, know what it
-   measures, where the boundary is, and how to derive the useful
-   ratio?
+## Logging
 
-## Cardinality
+- Does every record use a declared schema, fixed message, stable level, and owner?
+- Are trace/span and validated interaction IDs present when context exists?
+- Are untrusted fields length-bounded, control-character safe, and JSON encoded?
+- Are credentials, session values, bodies, prompts, raw errors, and unapproved personal data absent?
+- Are required security events classified and protected from ordinary level filtering/sampling?
+- Are sampling rules ordered, bounded, deterministic by workflow, and recorded as `sampling.policy`/`sampling.rate`?
+- Are explicit error/security policies locked at `1.0`, with trace sampling reviewed separately?
+- Does a sink/export failure leave business behavior unchanged and remain detectable?
+- Are log-group access, encryption, retention, deletion, and access monitoring explicit?
 
-8. **If `cardinality="medium"`:** is the justification credible? Does
-   `means=` spell out why the dimensional explosion is worth the
-   series cost? Would a log line or span be a better fit?
+## Runtime
 
-## Failure metrics
+- Fargate: Does the task role allow export, and is the sidecar health/memory configured?
+- Lambda: Is initialization outside the handler, flush bounded, JSON `LoggingConfig` set, and per-invocation shutdown absent?
+- Async: Does the adapter propagate OTel context plus stable `correlation_id`, enforce carrier limits, and represent batches/fan-out with links?
+- EKS: Does workload identity and resource enrichment match the collector topology?
+- EC2/local: Is the receiver exposure and credential source appropriate?
 
-9. **Failure metric uses `emit_failure(...)`?** Not `emit_counter` with
-   a hand-rolled `failure_class` tag.
-10. **Every exception site that can reach this counter has a
-    `register(Exc, FailureClass.X)` call?** Otherwise the `UNKNOWN`
-    bucket will catch it — that's sometimes acceptable, but confirm
-    it's intentional.
+## Operations
 
-## Cost
+- Is there a tested PromQL query?
+- Does the alarm handle missing and low-traffic data?
+- Are collector/export failures monitored?
+- Are current Region availability and CloudWatch limits verified?
+- Is there a tested Logs Insights query for each operational/security event consumer?
+- Are SDK, layer, collector, and image versions pinned and compatible?
 
-11. **High-frequency path → `sampling_rate` / `max_rate_hz` set?**
-12. **Inside a loop → uses `AggregatingCounter` /
-    `DurationAccumulator`?** Or has the `# instrumentation: loop-aggregate`
-    escape comment with a rationale the reviewer accepts?
+## Block the change for
 
-## Emission boundary
-
-13. **Emitted at a documented boundary** (request lifecycle, workflow
-    step, external call, retry, fallback) or via a canonical surface
-    pattern (middleware, decorator, base class)?
-14. **Not emitted inside a helper that has a single caller?** Move
-    the emission up.
-
-## Lifecycle
-
-15. **Changing an existing metric?** Confirm it's actually a new
-    versioned entry (`.v2`) with:
-    - Old entry marked `deprecated=True`, `replaced_by="<new>"`,
-      `retired_at=<today + 14 days>`.
-    - Both emitting during overlap.
-    - A follow-up PR scheduled to remove the old entry.
-16. **Removing an entry?** Confirm it was already `deprecated=True`
-    in a prior PR. Silent removal fails CI.
-
-## Test coverage
-
-17. **Contract-level test gates still green?** The gates (see
-    `examples/python/test_gates.py` for the reference) cover the new
-    `MetricDef`.
-18. **A new bucket function?** Add parametric tests covering its
-    enumeration and pathological inputs (negatives, zero, huge
-    values) — each bucket must be total.
-
-## Anti-patterns to flag
-
-- Raw string passed to any `emit_*` call.
-- Raw exception type or message in a tag value.
-- Dynamic metric name (f-string, `.format`, variable).
-- Distribution used to record integer counts.
-- Gauge used for monotonic accumulation.
-- `emit_counter` inside a `for` body without an aggregator.
-- `allowed_tags` expanded without adding the matching entry in
-  `tag_constraints`.
-- New `FailureClass` value added with no follow-up to update
-  downstream dashboards.
+- raw `PutMetricData` calls in business code
+- a hardcoded token or regional endpoint in application source
+- `awsemf` described as native OTLP/PromQL
+- `aws-xray-sdk`, `aws_xray_sdk`, or an X-Ray daemon instead of OTel
+- raw exception/user/request/session content as a metric attribute
+- duplicate standard HTTP, database, or messaging instrumentation
+- unbounded series creation without an approved budget
+- Lambda telemetry initialized or shut down per invocation
+- a production metric with no query or owner
+- raw `console.log`/`print` calls outside an approved structured logging adapter
+- secrets, credentials, session values, bodies, prompt content, or raw error data in logs
+- duplicate stdout and OTLP ingestion of the same record
+- required security events that runtime verbosity or sampling can disable
+- asynchronous code that generates a new correlation ID at every hop or assumes every batch record has one parent

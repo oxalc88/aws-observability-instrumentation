@@ -1,75 +1,74 @@
-# Kind semantic rules
+# OTel metric semantic rules
 
-Hard contracts per `kind`. The emission helper API enforces these;
-the CI gate rejects violations at merge time.
+## Counter
 
-> Language note: helper names below (`emit_counter`,
-> `AggregatingCounter`, `time_latency`, etc.) are the canonical Python
-> reference. Ports to other languages keep the same shapes under
-> idiomatic names — a TS port might expose `emitCounter()` /
-> `AggregatingCounter` / `timeLatency()` with the same contracts.
+Use a monotonic counter when values only add to a total:
 
-## `counter`
+- completed operations
+- failures
+- bytes or tokens consumed
+- retries attempted
 
-- **Monotonic event occurrences.** Each emission adds to a running
-  total. Values are typically `1.0`; values > 1 mean "batch of N
-  events".
-- Never a state snapshot. Never a current value. Never a rate.
-- Unit is `"count"` (for `outcome` counters) or a consumable-resource
-  unit like `"units"`, `"tokens"`, `"bytes"` (for `resource` counters).
-- Use `emit_counter(metric, tags=..., value=1.0)` — or, inside a
-  loop, wrap in `AggregatingCounter`.
+Never add a negative value. Do not append `_total` to an OTel instrument name solely for Prometheus; exporters may apply the Prometheus counter suffix. Query the exported series name in CloudWatch.
 
-## `gauge`
+Use `rate()` or `increase()` in PromQL. Never alert on the raw cumulative value.
 
-- **Current measured state.** Each emission replaces (or is sampled
-  as) the current value.
-- Never cumulative. Never a rate. If "the number only ever goes up",
-  it's a counter.
-- Must have a unit — `"items"`, `"bytes"`, `"seconds"`, etc.
-- Typical `emit_frequency="periodic"`; sampled on a schedule or at a
-  meaningful lifecycle boundary (queue drained, pool grown).
-- Use `emit_gauge(metric, tags=..., value=...)`.
+## Gauge
 
-## `distribution`
+Use a gauge for a current, independently meaningful state:
 
-- **Sampled measurements** — latency, size, duration. A percentile
-  engine downstream aggregates into p50/p95/p99.
-- Never a count in disguise. A distribution of `value=1.0` for every
-  event is an abuse; use a counter.
-- **Unit is mandatory.** Duration metrics are always `"ms"`.
-- Duration metrics must go through `MetricDef.latency(...)` (which
-  fixes `kind="distribution"`, `unit="ms"`, `purpose="latency"`). The
-  start→stop boundary lives in `operational_meaning`. Different
-  boundary = different metric.
-- Use `emit_latency(metric, duration_ms=..., tags=...)` or the
-  `time_latency(metric, tags=...)` context manager. Inside loops, use
-  `DurationAccumulator`.
+- queue depth
+- active workers
+- in-flight requests
+- pool utilization
 
-## Failure counters
+Do not repeatedly add deltas to a gauge. If a callback can observe the current value at collection time, prefer an observable gauge. The bundled examples use a synchronous gauge for portability.
 
-A special case of `counter`:
+## Histogram
 
-- Built only via `MetricDef.failure_counter(...)`. The constructor
-  pins `kind="counter"`, `unit="count"`, `purpose="outcome"`, and
-  injects `failure_class` into `allowed_tags` with the full
-  `FailureClass` taxonomy.
-- Emitted only via
-  `emit_failure(metric, failure=classify(exc), tags=...)`. Do not
-  pass `str(exc)` or `type(exc).__name__` as a tag — cardinality
-  explodes, downstream alerts can't match.
-- The `UNKNOWN` bucket is expected. Its rate is its own SLI. Do not
-  suppress it.
+Use a histogram for distributions:
 
-## Why these rules are enforced, not advised
+- request or workflow duration
+- payload size
+- batch size
+- age or lag
 
-Mixing kinds silently breaks downstream dashboards. A counter graphed
-as if it were a gauge looks like a slow-rising line; a gauge graphed
-as if it were a counter looks like a monotonic ramp. A "distribution"
-that only ever records `1.0` produces nonsense percentiles.
+Define explicit boundaries that match operational thresholds. Histograms cannot recover useful tail percentiles if all expected values fall into one bucket.
 
-The helper API refuses a wrong `kind` in pytest + non-production by
-raising `InstrumentationContractError`; in production it drops the
-emission and increments `instrumentation.violation.count` so the
-regression shows up on a dashboard rather than taking the process
-down.
+Record duration in seconds (`s`) unless an applicable OTel semantic convention specifies another unit. Measure elapsed time with a monotonic clock:
+
+```ts
+const started = performance.now();
+try {
+  await operation();
+} finally {
+  emitter.latency(DURATION, (performance.now() - started) / 1_000, attributes);
+}
+```
+
+```python
+started = time.monotonic()
+try:
+    operation()
+finally:
+    emitter.emit_latency(DURATION, duration_seconds=time.monotonic() - started)
+```
+
+## Up/down counter
+
+An OTel up/down counter can represent changes to current state, but it is easy to corrupt when processes crash before decrementing. Prefer an observable or synchronous gauge unless the state transition model and reset behavior are explicit.
+
+## Temporality and restarts
+
+Let the SDK/exporter negotiate supported temporality. Application code must not infer a lifetime total from local process state. PromQL rate functions handle counter resets when series identity remains stable.
+
+## Units
+
+Use UCUM units:
+
+- `s` for seconds
+- `By` for bytes
+- `1` for ratios
+- `{request}`, `{item}`, `{token}`, or another annotated unit for counts
+
+Do not place units in metric names unless an established semantic convention requires the name.

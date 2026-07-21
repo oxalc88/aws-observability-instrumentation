@@ -1,91 +1,42 @@
-# Charter
+# Instrumentation charter
 
-This skill governs **system-behavior instrumentation** via Sentry. It
-defines what signals the service is allowed to emit, how they are
-named and shaped, where they are emitted from, how much they may cost,
-and how misuse is prevented by default.
+## Scope
 
-The skill started as Metrics governance and is **evolving to cover
-tracing** where Sentry ships a product that depends on specific span
-conventions. The first tracing surface is AI agent conversations
-(`gen_ai.*` spans); more tracing conventions can join under the same
-governance principles (closed sets for tags, cardinality on spans not
-metrics, observability never crashes the service).
+This skill governs application metrics, traces, and structured logs exported to Amazon CloudWatch. It covers custom metric and log-event contracts, ordered log sampling, semantic-convention reuse, failure classification, synchronous/asynchronous correlation, cardinality, exporter topology, AWS runtime deployment, PromQL and Logs Insights verification, and CI enforcement.
 
-## What's in scope
+It does not turn operational logs into product analytics, regulated audit trails, legal evidence, or business intelligence events. Security-relevant application events are in scope, but their threat model, incident response, retention, and compliance controls still require the appropriate organizational system.
 
-- Sentry Metrics (counter / gauge / distribution).
-- Duration measurement around external calls, workflow steps, and
-  request lifecycles.
-- Failure counters bucketed through a bounded taxonomy.
-- Resource accounting (tokens, quota units, bytes).
-- Correctness counters for assumption-violation events (parse
-  failures, taxonomy fallbacks).
-- **AI agent conversation tracing**: `gen_ai.*` spans
-  (`invoke_agent` / `chat` / `execute_tool`), `gen_ai.conversation.id`,
-  and per-call token/message attributes for Sentry's Explore →
-  Conversations view. See `ai-agent-conversations.md`.
+## Invariants
 
-## What's out of scope
+1. **Instrument once.** Application code uses OTel APIs and remains independent of CloudWatch authentication and endpoints.
+2. **Define once.** Every custom metric has one immutable `MetricDef` in a registry and one instrument instance per meter provider.
+3. **Reuse standards.** Prefer current OTel semantic conventions and auto-instrumentation over custom equivalents.
+4. **Bound metric attributes.** A metric attribute value comes from a documented closed set or bucket function. Identifiers and free-form content belong on spans or logs when policy permits.
+5. **Separate identity from operation.** Service, version, environment, and cloud runtime identity belong on the OTel resource. Operation fields belong on data points and spans.
+6. **Keep meaning stable.** A change to name, kind, unit, aggregation, boundaries, or attribute meaning creates a new versioned metric.
+7. **Measure at ownership boundaries.** Middleware owns server measurements, client wrappers own dependency measurements, workflow wrappers own step measurements, and queue adapters own message lifecycle measurements.
+8. **Make missing telemetry visible.** Monitor collectors, export errors, rejected data, queues, and authentication failures.
+9. **Prove queryability.** Each production SLI ships with a tested PromQL query and owner.
+10. **Choose one CloudWatch metric path.** Native OTLP/PromQL and classic/EMF are different stores. Do not dual-publish accidentally.
+11. **Structure and classify logs.** Emit one JSON record from a declared event schema; validate and sanitize untrusted fields.
+12. **Correlate signals.** Put active trace/span IDs into logs and propagate a validated interaction ID through a transport-specific carrier where the workflow outlives one trace.
+13. **Minimize logged data.** Secrets, credentials, bodies, prompts, and unapproved personal data never enter the operational log stream.
+14. **Choose one log delivery path.** Do not send the same record through platform stdout collection and an OTLP bridge.
+15. **Sample deterministically.** Evaluate ordered policies only against bounded event properties, record the applied policy/rate, and retain errors and security events at `1.0`.
+16. **Model async honestly.** Preserve trace context and workflow correlation through queues, streams, topics, and event buses; use links for batches/fan-out rather than inventing one parent.
 
-- **Product analytics**: button clicks, funnel progression, feature-
-  flag exposure. These belong in your product-analytics tool (PostHog,
-  Amplitude, Mixpanel, etc.), not in Sentry instrumentation.
-- **Dashboards, alert rules, SLO thresholds, on-call policy**: these
-  are downstream consumers of the metrics this skill defines. Clean
-  instrumentation is a precondition; the dashboards themselves are
-  decided outside the code.
-- **General distributed tracing conventions** (span naming, span
-  attributes, span kinds for arbitrary services): still out of scope —
-  large enough for its own skill. The one tracing surface this skill
-  *does* cover is the `gen_ai.*` namespace (above), because Sentry's
-  Conversations product reads those exact attributes.
-- **Logs**: routed through the project's logger (typically via Sentry's
-  `LoggingIntegration`). Metric decisions don't dictate log content.
+## Reject immediately
 
-## Principles
-
-1. **Closed sets over open strings.** Every tag value is either
-   enumerated verbatim in `MetricDef.tag_constraints` or is the output
-   of an approved bucket function. Raw exception strings, user ids,
-   URLs, timestamps — all forbidden as tag values.
-2. **Identity is immutable.** A metric's
-   `(name, kind, unit, purpose, allowed_tags, tag_constraints)` tuple
-   cannot change under the same name. Meaning change = new versioned
-   name.
-3. **The correct path is the easiest path.** If emitting correctly
-   requires memorizing 11 fields, people will cargo-cult or bypass.
-   Constructors fill in the cross-cutting fields; surface patterns
-   bake in the emissions. Hand-rolling is always more code than using
-   the helper.
-4. **Observability never crashes the service.** Emission helpers catch
-   every exception from the SDK and drop the emission silently in
-   production. In pytest + non-production environments, validator
-   failures raise so misuse is caught in CI.
-5. **Unknown is a signal.** The `UNKNOWN` failure bucket's rate is its
-   own SLI. A rising `UNKNOWN` rate means a new exception class is
-   being raised without a registration, or a dependency is failing in
-   a shape nobody modeled. Either way it's actionable.
-6. **Cost is a first-class attribute.** Hot-path distributions sample;
-   loops aggregate; rate limits drop beyond a cap. Every `MetricDef`
-   declares its cost shape so the helper + CI gate can enforce it
-   uniformly.
-
-## How this skill earns its keep
-
-Without governed instrumentation you get:
-
-- Raw `str(exc)` leaking into tag values (PII risk, cardinality
-  blowup, alert rules can't match).
-- Distributions in tight loops (Sentry bill explodes; percentiles
-  distort).
-- Silently renamed metrics (dashboards go dark overnight; no audit
-  trail).
-- New metrics invented per feature that duplicate existing coverage
-  under different names.
-- Failure counters tagged `exception="AttributeError: 'NoneType' object..."`
-  that an SRE can't group across services.
-
-Each failure mode has a rule in the charter that prevents it *by
-construction* — using the helpers correctly is less work than breaking
-them.
+- `PutMetricData` calls scattered through business code.
+- A collector endpoint or bearer token hardcoded in application source.
+- Request IDs, user IDs, session IDs, raw URL paths, query strings, prompt text, or exception messages as metric attributes.
+- New custom HTTP or database metrics that duplicate OTel auto-instrumentation.
+- Wall-clock time used to measure elapsed duration.
+- Per-invocation provider initialization in Lambda.
+- Provider shutdown at the end of every Lambda invocation.
+- An `awsemf` pipeline presented as native OTLP/PromQL ingestion.
+- Raw `console.log`/`print` calls that bypass the approved structured logger.
+- Logging request/response bodies, authorization data, credentials, session values, prompts, or arbitrary error text.
+- A logger that permits CR/LF injection, unbounded fields, or sink failures that crash the business operation.
+- An explicit error/security sampling policy that is not locked at `1.0`.
+- An asynchronous adapter that replaces `correlation_id` at each hop or ignores carrier quotas and batch links.
