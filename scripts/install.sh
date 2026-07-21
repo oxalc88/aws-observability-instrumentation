@@ -172,10 +172,10 @@ telemetry, or changes an AWS telemetry deployment:
 
 1. Read \`$SKILL_CLONE/SKILL.md\`.
 2. Follow its decision rules and surface patterns.
-3. For deeper rules (tagging, cost model, lifecycle), open the relevant
-   file under \`$SKILL_CLONE/references/\`.
-4. Use \`$SKILL_CLONE/examples/typescript/\` as the canonical Node.js
-   reference. Python examples are secondary parity examples.
+3. For deeper rules (tagging, cost, lifecycle, deployment, and logging), open
+   the relevant file under \`$SKILL_CLONE/references/\`.
+4. Use \`$SKILL_CLONE/examples/typescript/\` for Node.js or TypeScript and
+   \`$SKILL_CLONE/examples/python/\` for Python.
 
 Keep AWS authentication in the collector or runtime configuration. Never
 attach unbounded identifiers or exception text to metric attributes. Use only

@@ -51,6 +51,33 @@ git ls-remote --tags https://github.com/oxalc88/aws-observability-instrumentatio
 
 Each guide explains what the installer writes, how the agent loads the skill, and how to verify the installation.
 
+### Try the skill
+
+Paste any of these prompts into your agent:
+
+```text
+Add CloudWatch-compatible OpenTelemetry instrumentation to the new /users
+endpoint, including governed metrics, a trace, and a correlated structured
+outcome log.
+
+Instrument the external Stripe client with the standard triad
+(count + duration + failure) and the matching dependency span.
+
+Add a fallback metric and correlated failure log for the case where the LLM
+response parse fails.
+
+This workflow step has no instrumentation. Apply the matching TypeScript or
+Python workflow pattern and add the required MetricDef and LogEventDef entries.
+
+Review this PR for metrics, tracing, logging, privacy, and cardinality quality
+against the skill's review rubric.
+
+Port the instrumentation layer from our Python service to our TypeScript
+service with the same signal contracts and idiomatic language APIs.
+```
+
+The agent will read `SKILL.md`, select the matching runtime and signal paths, use the governed definitions and surface patterns, and produce code that passes the policy gate.
+
 ## What it covers
 
 - OpenTelemetry metric names, units, histogram boundaries, attributes, and lifecycle rules.

@@ -7,6 +7,7 @@ All notable changes to the `cloudwatch-instrumentation` skill are documented her
 ### Changed
 
 - Promoted agent installation to a complete Quick Start with clone, version-pinning, supported-agent, and adapter-specific guidance.
+- Restored agent discovery and consumer-install context in `AGENTS.md`, clarified TypeScript/Python parity in Codex instructions, and added CloudWatch-specific prompts for trying the skill.
 
 ## [0.1.0] - 2026-07-21
 
