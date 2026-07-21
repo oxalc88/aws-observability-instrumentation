@@ -4,6 +4,8 @@ A Node.js-first coding skill for three-pillar observability in Amazon CloudWatch
 
 The policy is language agnostic. TypeScript is the canonical implementation; Python examples prove that the same contracts can be applied across languages.
 
+This project is based on [Sentry Instrumentation](https://github.com/tortastudios/sentry-instrumentation), a skill that standardizes how application observability is instrumented. Credit for the contract-first approach and guidance on what to measure goes to the team at [Torta Studios](https://tortastudios.com/).
+
 ## What it covers
 
 - OpenTelemetry metric names, units, histogram boundaries, attributes, and lifecycle rules.
