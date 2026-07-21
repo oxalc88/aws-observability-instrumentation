@@ -4,6 +4,8 @@ All notable changes to the `cloudwatch-instrumentation` skill are documented her
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-21
+
 ### Added
 
 - **TypeScript reference implementation** with runtime metric validation, histogram views, OTel auto-instrumentation, structured logging, HTTP/workflow surfaces, Lambda lifecycle handling, typechecking, and tests.
