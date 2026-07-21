@@ -128,8 +128,11 @@ examples/python/retry_loop.py              retry surface
 examples/python/fallback_path.py           fallback surface
 examples/python/lambda_handler.py          Lambda lifecycle surface
 examples/python/correlation_context.py     active workflow correlation context
+examples/python/workflow_propagation.py    generic asynchronous text carrier
 examples/python/sqs_workflow.py            SQS correlation and per-record spans
 examples/python/sqs_lambda_handler.py      SQS batch/partial-failure surface
+examples/python/kinesis_workflow.py        Kinesis envelope and per-record spans
+examples/python/kinesis_lambda_handler.py  Kinesis batch/lifecycle surface
 examples/python/ai_agent_spans.py          GenAI trace surface
 examples/python/ci_gate.py                 static contract checks
 ```

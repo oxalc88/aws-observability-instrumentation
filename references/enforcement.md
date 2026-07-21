@@ -40,7 +40,7 @@ npm run check
 npm test
 ```
 
-The tests cover metric construction, required/closed attributes, instrument reuse, monotonic counter validation, structured event fields, sensitive-data defaults, trace/workflow correlation, ordered deterministic sampling, mandatory retention, injection neutralization, SQS quota/links, generic asynchronous carriers, level behavior, and sink failure containment. Consumer projects should also use in-memory exporters and logger sinks to assert resource context and emitted records.
+The tests cover metric construction, required/closed attributes, instrument reuse, monotonic counter validation, structured event fields, sensitive-data defaults, trace/workflow correlation, ordered deterministic sampling, mandatory retention, injection neutralization, SQS quota/links, Kinesis envelopes/links, generic asynchronous carriers, level behavior, and sink failure containment. Consumer projects should also use in-memory exporters and logger sinks to assert resource context and emitted records.
 
 ## Python
 

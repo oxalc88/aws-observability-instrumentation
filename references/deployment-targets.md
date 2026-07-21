@@ -49,7 +49,7 @@ Lambda does not support a normal long-running sidecar. For CloudWatch APM, prefe
 11. Load instrumentation before the handler module. The self-managed TypeScript example uses `NODE_OPTIONS=--enable-source-maps --import=./dist/lambda-bootstrap.js`; an ADOT layer or Application Signals bootstrap has its own documented wrapper and must remain the sole provider owner.
 12. For AWS active tracing with an ADOT-owned provider, configure `OTEL_PROPAGATORS=tracecontext,baggage,xray-lambda`; never list `xray` and `xray-lambda` together. The self-managed example constructs the equivalent propagator directly.
 
-Use `examples/typescript/src/lambda-bootstrap.ts` plus `lambda-handler.ts` as the canonical provider-reuse and flush example. `sqs-lambda-handler.ts` and `kinesis-lambda-handler.ts` are the worked TypeScript asynchronous batch examples; `examples/python/sqs_lambda_handler.py` supplies the Python SQS equivalent. Check current regional layer ARNs in official AWS documentation instead of hardcoding an ARN in this skill.
+Use `examples/typescript/src/lambda-bootstrap.ts` plus `lambda-handler.ts` as the canonical provider-reuse and flush example. TypeScript and Python both provide worked SQS and Kinesis asynchronous batch handlers. Check current regional layer ARNs in official AWS documentation instead of hardcoding an ARN in this skill.
 
 ## Asynchronous AWS services
 
@@ -57,7 +57,7 @@ The observability contract is not limited to SQS. Every queue, stream, topic, ev
 
 For the SQS example, enable active tracing on API Gateway, every Lambda function, and the SQS queue. The default OTel Lambda instrumentation extracts the `AWSTraceHeader` system attribute and creates consumer links. Use `useGlobalPropagatorForSqsExtraction: true` only when producers deliberately inject W3C fields into message attributes. Enable partial-batch failure reporting when returning `batchItemFailures`.
 
-Kinesis and DynamoDB Streams do not provide the same generic user message-attribute carrier as SQS. The TypeScript Kinesis adapter puts the allowlisted propagation carrier and `correlation_id` in a versioned payload envelope, enforces a conservative 1 MiB serialized-envelope ceiling, and assumes records have already been deaggregated when KPL aggregation is used. The PutRecord integration must additionally check the current service limit across the data blob and partition key. For DynamoDB Streams, SNS, EventBridge, Step Functions, Kafka, or another transport, verify the current SDK instrumentation and managed-service propagation behavior rather than copying SQS- or Kinesis-specific settings.
+Kinesis and DynamoDB Streams do not provide the same generic user message-attribute carrier as SQS. The TypeScript and Python Kinesis adapters put the allowlisted propagation carrier and `correlation_id` in a versioned payload envelope, enforce a conservative 1 MiB serialized-envelope ceiling, and assume records have already been deaggregated when KPL aggregation is used. The PutRecord integration must additionally check the current service limit across the data blob and partition key. For DynamoDB Streams, SNS, EventBridge, Step Functions, Kafka, or another transport, verify the current SDK instrumentation and managed-service propagation behavior rather than copying SQS- or Kinesis-specific settings.
 
 ## EKS and Kubernetes
 

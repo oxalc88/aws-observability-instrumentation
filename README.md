@@ -2,7 +2,7 @@
 
 A Node.js-first coding skill for three-pillar observability in Amazon CloudWatch: governed native OpenTelemetry metrics, OpenTelemetry traces, and secure structured application logs. It preserves the original repository's contract-first approach while replacing Sentry-specific APIs with standard OTel SDKs, AWS-supported collection, PromQL-aware metrics, and AWS/OWASP-aligned logging.
 
-The policy is language agnostic. TypeScript is the canonical Node.js implementation; Python maintains behavioral parity for the core metric, logging, tracing, Lambda lifecycle, and SQS contracts. Transport-specific coverage that is not yet at parity is listed in the roadmap.
+The policy is language agnostic. TypeScript is the canonical Node.js implementation; Python maintains behavioral parity for the core metric, logging, tracing, Lambda lifecycle, SQS, and Kinesis contracts.
 
 This project is based on [Sentry Instrumentation](https://github.com/tortastudios/sentry-instrumentation), a skill that standardizes how application observability is instrumented. Credit for the contract-first approach and guidance on what to measure goes to the team at [Torta Studios](https://tortastudios.com/).
 
@@ -13,7 +13,7 @@ This project is based on [Sentry Instrumentation](https://github.com/tortastudio
 - Node.js SDK initialization, auto-instrumentation, custom metrics, and traces.
 - Declared structured log events with trace correlation, privacy classes, injection controls, log levels, security-event handling, and Logs Insights queries.
 - Ordered deterministic log-sampling policies with mandatory error/security retention and per-record policy metadata.
-- Transport-neutral asynchronous context propagation with tested SQS adapters in TypeScript/Python and a versioned Kinesis adapter in TypeScript.
+- Transport-neutral asynchronous context propagation with tested SQS and Kinesis adapters in TypeScript and Python.
 - AWS SigV4 collector export to CloudWatch's native OTLP/HTTP endpoints.
 - ECS/Fargate sidecar, optimized Lambda layer/collectorless SDK, EKS, EC2, App Runner, local, and on-premises deployment choices.
 - PromQL queries for counters, rates, histograms, availability, and failures.
@@ -138,9 +138,9 @@ cloudwatch-instrumentation/
 |  |  |- src/workflow-propagation.ts
 |  |  |- src/sqs-workflow.ts
 |  |  |- src/sqs-lambda-handler.ts
-|  |  |- src/kinesis-workflow.ts    # TypeScript only; Python is on the roadmap
+|  |  |- src/kinesis-workflow.ts
 |  |  `- src/kinesis-lambda-handler.ts
-|  `- python/                     # Core-contract and SQS parity
+|  `- python/                     # Core-contract and transport parity
 |     |- emission_module.py
 |     |- metric_def.py
 |     |- metric_tags.py
@@ -150,8 +150,11 @@ cloudwatch-instrumentation/
 |     |- http_middleware.py
 |     |- workflow_decorator.py
 |     |- lambda_handler.py
+|     |- workflow_propagation.py
 |     |- sqs_workflow.py
 |     |- sqs_lambda_handler.py
+|     |- kinesis_workflow.py
+|     |- kinesis_lambda_handler.py
 |     |- external_api_client.py
 |     |- retry_loop.py
 |     |- fallback_path.py
@@ -231,7 +234,7 @@ logger.emit(ORDER_COMPLETED, { outcome: "success" });
 
 Use [`examples/typescript/src/lambda-bootstrap.ts`](examples/typescript/src/lambda-bootstrap.ts) with [`lambda-handler.ts`](examples/typescript/src/lambda-handler.ts) for early initialization, bounded flush, terminal metric/log events, and trace correlation. Preload the compiled bootstrap with `NODE_OPTIONS=--enable-source-maps --import=./dist/lambda-bootstrap.js`. If the optimized ADOT layer, Application Signals, or another collectorless ADOT bootstrap owns OTel initialization, use that provider instead of starting the example `NodeSDK` a second time.
 
-[`workflow-propagation.ts`](examples/typescript/src/workflow-propagation.ts) is the transport-neutral asynchronous carrier. TypeScript provides complete SQS and Kinesis examples through [`sqs-workflow.ts`](examples/typescript/src/sqs-workflow.ts), [`sqs-lambda-handler.ts`](examples/typescript/src/sqs-lambda-handler.ts), [`kinesis-workflow.ts`](examples/typescript/src/kinesis-workflow.ts), and [`kinesis-lambda-handler.ts`](examples/typescript/src/kinesis-lambda-handler.ts). Python provides the equivalent SQS path through [`sqs_workflow.py`](examples/python/sqs_workflow.py) and [`sqs_lambda_handler.py`](examples/python/sqs_lambda_handler.py). Other transports must preserve the same OTel context plus `correlation_id` contract through their own carrier-specific adapter.
+[`workflow-propagation.ts`](examples/typescript/src/workflow-propagation.ts) and [`workflow_propagation.py`](examples/python/workflow_propagation.py) implement the transport-neutral asynchronous carrier. Both languages provide complete SQS and Kinesis workflow/handler examples under their respective example directories. Other transports must preserve the same OTel context plus `correlation_id` contract through their own carrier-specific adapter.
 
 Set Lambda `LoggingConfig` to JSON, choose application/system levels, pre-create the log group with finite retention, and use the platform log delivery path.
 
@@ -275,11 +278,14 @@ Supported adapter names are `claude-code`, `cursor`, `codex`, `aider`, `continue
 
 ## Roadmap
 
-- **v0.1 - SQS TypeScript:** complete, with propagation quota enforcement, linked per-record spans, correlation, and partial-batch failure handling.
-- **v0.1 - SQS Python:** complete, added in this iteration with functional parity to the TypeScript adapter.
-- **v0.1 - Kinesis TypeScript:** complete, added in this iteration with a versioned payload envelope and non-aggregated record handling.
-- **v0.2 - Kinesis Python:** pending in the backlog.
-- **Backlog - Step Functions:** pending; the transport-neutral contract is already documented in [`references/async-trace-propagation.md`](references/async-trace-propagation.md).
+### Complete
+
+- **SQS TypeScript and Python:** propagation quota enforcement, linked per-record spans, correlation, and partial-batch failure handling.
+- **Kinesis TypeScript and Python:** versioned payload envelopes, linked per-record spans, correlation, size validation, and non-aggregated record handling.
+
+### Backlog
+
+- **Step Functions:** transport adapter pending; the transport-neutral contract is already documented in [`references/async-trace-propagation.md`](references/async-trace-propagation.md).
 
 ## Production checks
 

@@ -20,6 +20,7 @@ Key files:
 | `emission_module.py` | OTel providers, histogram views, and validated emission |
 | `structured_logging.py` | Structured event schemas, JSON, correlation, and safety controls |
 | `correlation_context.py` | Validated active business-workflow correlation context |
+| `workflow_propagation.py` | Generic OTel and business-correlation text carrier |
 | `http_middleware.py` | ASGI boundary instrumentation |
 | `external_api_client.py` | External HTTP dependency instrumentation |
 | `workflow_decorator.py` | Workflow-step instrumentation |
@@ -29,10 +30,12 @@ Key files:
 | `lambda_handler.py` | Lambda cold-start reuse and bounded flush |
 | `sqs_workflow.py` | SQS carrier quota, producer links, and per-record consumer spans |
 | `sqs_lambda_handler.py` | SQS partial-batch failures, correlated logs/metrics, and bounded flush |
+| `kinesis_workflow.py` | Versioned Kinesis envelope, size validation, and per-record spans |
+| `kinesis_lambda_handler.py` | Kinesis batch, correlated logs/metrics, and bounded flush |
 | `ci_gate.py` | Shared Python/TypeScript/JavaScript contract checks |
 
 AWS credentials and CloudWatch endpoints belong in the collector or deployment configuration. Application modules should normally send OTLP to a local or runtime-provided endpoint. Structured logs normally use the runtime's stdout delivery path; do not add an OTLP log exporter unless that path is selected deliberately and duplicate platform collection is removed.
 
 The Python logger preserves the canonical Node schema for terminal failures: `metric.name`, `operation.name`, `exception.type`, the innermost `code.*` frame, and active trace IDs, without exception messages or full tracebacks. It also implements the same ordered deterministic sampling rules, managed `sampling.policy`/`sampling.rate` fields, and locked error/security retention.
 
-The Python SQS adapter has functional parity with the TypeScript SQS example: it supports AWS `AWSTraceHeader` and W3C message-attribute extraction, validates one stable `correlation_id`, creates linked per-record consumer spans, returns partial-batch failures, and keeps logs and metrics correlated inside each record context. Kinesis is currently implemented only in TypeScript; any future Python transport adapter must preserve the transport-neutral contract in `references/async-trace-propagation.md`.
+The Python SQS adapter has functional parity with the TypeScript SQS example: it supports AWS `AWSTraceHeader` and W3C message-attribute extraction, validates one stable `correlation_id`, creates linked per-record consumer spans, returns partial-batch failures, and keeps logs and metrics correlated inside each record context. The Python Kinesis adapter has the same versioned envelope, conservative size preflight, producer-link, per-record context, and default all-or-retry batch behavior as TypeScript. Future transport adapters must preserve the transport-neutral contract in `references/async-trace-propagation.md`.

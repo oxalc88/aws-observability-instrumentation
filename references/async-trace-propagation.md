@@ -1,6 +1,6 @@
 # Asynchronous trace and workflow propagation
 
-Use this reference when a workflow crosses API Gateway, Lambda, a queue, stream, event bus, topic, workflow engine, or another asynchronous boundary. The goal is end-to-end trace continuity plus a stable business-workflow identity while application instrumentation uses OpenTelemetry rather than a vendor SDK. SQS has complete TypeScript and Python examples, and Kinesis has a complete TypeScript example; these worked adapters do not limit the transport-neutral pattern.
+Use this reference when a workflow crosses API Gateway, Lambda, a queue, stream, event bus, topic, workflow engine, or another asynchronous boundary. The goal is end-to-end trace continuity plus a stable business-workflow identity while application instrumentation uses OpenTelemetry rather than a vendor SDK. SQS and Kinesis have complete TypeScript and Python examples; these worked adapters do not limit the transport-neutral pattern.
 
 ## Keep the concepts separate
 
@@ -15,7 +15,7 @@ Every adapter must carry two related but independent contexts:
 1. Inject and extract the active OTel context using the standard propagator API so producer and consumer spans can be connected or linked.
 2. Carry one explicit, validated `correlation_id` for the broader workflow, including retries, fan-out, DLQs, replay, and cases where trace sampling or retention creates multiple traces.
 
-`examples/typescript/src/workflow-propagation.ts` implements this contract for any string-key/string-value carrier. Use it directly for normalized message headers or a versioned metadata envelope, then add a small transport adapter for quotas, binary encoding, reserved fields, batch semantics, and SDK-specific shapes. `examples/typescript/src/correlation-context.ts` and `StructuredLogger` are transport-independent.
+`examples/typescript/src/workflow-propagation.ts` and `examples/python/workflow_propagation.py` implement this contract for any string-key/string-value carrier. Use the matching helper directly for normalized message headers or a versioned metadata envelope, then add a small transport adapter for quotas, binary encoding, reserved fields, batch semantics, and SDK-specific shapes. The correlation-context and structured-logger implementations are transport-independent.
 
 | Transport | Typical carrier | Required adapter concern |
 | --- | --- | --- |
@@ -96,9 +96,9 @@ On the consumer, `processSqsRecord()` requires and validates `correlation_id`, c
 
 ## Kinesis example: versioned payload envelope
 
-Kinesis has no generic user message-attribute map, so `examples/typescript/src/kinesis-workflow.ts` serializes one JSON envelope with `schema_version: 1`, an isolated `_propagation` text carrier produced by `injectWorkflowContext()`, and the business value under `data`. `_propagation` therefore contains the active propagator's allowlisted fields plus the validated `correlation_id` without colliding with business keys. The producer helper enforces this adapter's conservative 1 MiB serialized-envelope ceiling before an application calls `PutRecord`. Current Kinesis APIs allow a larger record and apply their service limit to the data blob plus partition key, so the PutRecord integration must still validate the complete request against the current AWS limit.
+Kinesis has no generic user message-attribute map, so `examples/typescript/src/kinesis-workflow.ts` and `examples/python/kinesis_workflow.py` serialize one JSON envelope with `schema_version: 1`, an isolated `_propagation` text carrier produced by the language's generic workflow helper, and the business value under `data`. `_propagation` therefore contains the active propagator's allowlisted fields plus the validated `correlation_id` without colliding with business keys. The producer helpers enforce this adapter's conservative 1 MiB serialized-envelope ceiling before an application calls `PutRecord`. Current Kinesis APIs allow a larger record and apply their service limit to the data blob plus partition key, so the PutRecord integration must still validate the complete request against the current AWS limit.
 
-The consumer decodes `event.Records[].kinesis.data`, validates the schema and propagation carrier, calls `extractWorkflowContext()`, and creates one consumer span linked to that record's producer context while activating both the span and `correlation_id`. `examples/typescript/src/kinesis-lambda-handler.ts` demonstrates a bounded flush and the default all-or-retry batch behavior; partial-batch responses are a separate event-source-mapping opt-in. The adapter assumes non-aggregated records because KPL aggregation requires deaggregation before the logical record envelopes can be processed.
+The consumer decodes `event.Records[].kinesis.data`, validates the schema and propagation carrier, calls the language's workflow extraction helper, and creates one consumer span linked to that record's producer context while activating both the span and `correlation_id`. `examples/typescript/src/kinesis-lambda-handler.ts` and `examples/python/kinesis_lambda_handler.py` demonstrate a bounded flush and the default all-or-retry batch behavior; partial-batch responses are a separate event-source-mapping opt-in. Both adapters assume non-aggregated records because KPL aggregation requires deaggregation before the logical record envelopes can be processed.
 
 ## Batch and fan-out semantics
 

@@ -51,13 +51,13 @@ Example: `examples/python/fallback_path.py`.
 
 Initialize telemetry and the logger before the handler module and reuse them across warm invocations. Let OTel Lambda auto-instrumentation own the invocation span; create only application operation or per-message spans in the handler. Keep `faas.invocation_id` as runtime identity and use a separate stable `correlation_id` for the business workflow. Never log the raw invocation event. Flush application-owned OTel metrics/traces within remaining time; platform-delivered stdout logs do not need that OTel flush. Do not shut down providers after each invocation.
 
-Examples: `examples/typescript/src/lambda-bootstrap.ts`, `examples/typescript/src/lambda-handler.ts`, `examples/typescript/src/sqs-lambda-handler.ts`, `examples/typescript/src/kinesis-lambda-handler.ts`, `examples/python/lambda_handler.py`, and `examples/python/sqs_lambda_handler.py`.
+Examples: `examples/typescript/src/lambda-bootstrap.ts`, `examples/typescript/src/lambda-handler.ts`, `examples/typescript/src/sqs-lambda-handler.ts`, `examples/typescript/src/kinesis-lambda-handler.ts`, `examples/python/lambda_handler.py`, `examples/python/sqs_lambda_handler.py`, and `examples/python/kinesis_lambda_handler.py`.
 
 ## Asynchronous messaging
 
 Use OTel propagators through a transport-specific carrier, carry one validated `correlation_id`, and use span links for batches or fan-out with multiple producer contexts. A per-message span gives logs one unambiguous active span. Enforce each transport's metadata count, byte-size, encoding, privacy, replay, and reserved-field rules.
 
-Examples: `examples/typescript/src/workflow-propagation.ts` for a generic text carrier, `examples/typescript/src/sqs-workflow.ts` and `examples/python/sqs_workflow.py` for SQS, and `examples/typescript/src/kinesis-workflow.ts` for a versioned Kinesis payload envelope. Other transports require their own thin adapter.
+Examples: `examples/typescript/src/workflow-propagation.ts` and `examples/python/workflow_propagation.py` for a generic text carrier; both language directories also contain SQS and Kinesis transport adapters. Other transports require their own thin adapter.
 
 ## Structured event
 
