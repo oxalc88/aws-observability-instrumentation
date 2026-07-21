@@ -1,0 +1,4 @@
+interface:
+  display_name: "CloudWatch Instrumentation"
+  short_description: "Governed metrics, traces, and logs for CloudWatch"
+  default_prompt: "Use $cloudwatch-instrumentation to add governed OpenTelemetry metrics and traces plus secure structured logging for Amazon CloudWatch."
