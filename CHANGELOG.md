@@ -1,24 +1,27 @@
 # Changelog
 
-## Unreleased
+All notable changes to the `cloudwatch-instrumentation` skill are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version numbers follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
-### CloudWatch/OpenTelemetry adaptation
+## [Unreleased]
+
+### Added
+
+- **TypeScript reference implementation** with runtime metric validation, histogram views, OTel auto-instrumentation, structured logging, HTTP/workflow surfaces, Lambda lifecycle handling, typechecking, and tests.
+- **Python parity implementation** for governed metrics, structured logs, traces, Lambda lifecycle, and the shared failure taxonomy.
+- **SQS adapters for TypeScript and Python** with correlation validation, AWS X-Ray or W3C extraction, ten-attribute quota enforcement, producer links, per-record spans, correlated metrics/logs, and partial-batch failures.
+- **Kinesis adapters for TypeScript and Python** with versioned propagation envelopes, conservative 1 MiB serialized-envelope preflights, producer links, per-record spans, correlated metrics/logs, default all-or-retry Lambda handlers, and contract tests.
+- **Transport-neutral workflow propagation** carrying OTel context and a stable business `correlation_id` independently across retries, fan-out, DLQs, and replay.
+- **CloudWatch deployment templates** for SigV4 or bearer-token OTLP export, ECS/Fargate, three-signal collection, and least-scope IAM.
+- **AWS/OWASP-aligned structured logging** with declared schemas, trace correlation, privacy classes, injection controls, deterministic sampling, locked error/security retention, safe exception source fields, and sink failure isolation.
+- **CloudWatch references** for native OTLP and PromQL, deployment targets, structured logging, asynchronous propagation, Logs Insights investigations, and AI/LLM semantic spans.
+
+### Changed
 
 - Replaced vendor-specific instrumentation policy with language-agnostic OpenTelemetry contracts for CloudWatch native OTLP metrics and traces.
-- Added TypeScript as the canonical Node.js implementation with runtime metric validation, histogram views, auto-instrumentation, HTTP patterns, Lambda lifecycle handling, typechecking, and tests.
-- Retained Python as a secondary cross-language implementation and expanded the policy gate to check Python, TypeScript, and JavaScript.
-- Added SigV4 and bearer-token collector configurations, an ECS/Fargate task definition template, and least-scope metric/trace IAM actions.
-- Added AWS runtime guidance for Fargate, Lambda, EKS, EC2, App Runner, local, and on-premises workloads.
-- Added CloudWatch PromQL naming, query, and dashboard guidance.
-- Added a third observability pillar: AWS/OWASP-aligned structured logging with declared event schemas, trace/correlation fields, sensitive-data defaults, log-injection controls, security-event behavior, and sink failure isolation.
-- Added Lambda/Fargate platform-log guidance, an opt-in three-signal CloudWatch OTLP collector, log IAM scope, Logs Insights queries, and a safe investigation playbook.
-- Added safe exception type and OTel `code.*` source locations, checked metric/log operation links, managed-field protection, and TypeError taxonomy tests so failure metrics lead to the responsible code and trace.
-- Added ordered deterministic log sampling in TypeScript and Python, managed sampling metadata, and locked 100% retention for errors and security events.
-- Added transport-neutral asynchronous OTel/correlation carriers, an AWS Lambda `xray-lambda` bootstrap, and a tested TypeScript SQS adapter with attribute-quota enforcement, producer links, per-record spans, and partial-batch failures.
-- Added the Python SQS adapter with the same correlation cascade, AWS X-Ray or W3C extraction modes, ten-attribute quota enforcement, producer links, per-record spans, correlated metrics/logs, and partial-batch failures.
-- Added the TypeScript Kinesis adapter with a versioned propagation envelope, a conservative 1 MiB serialized-envelope preflight, producer links, per-record spans, a bounded-flush Lambda batch example, and tests for contract failures and trace-context round trips.
-- Updated Lambda guidance for AWS's optimized ADOT layer and collectorless SDK, and removed the legacy embedded-collector template as a default option.
-- Ended Lambda invocation spans before bounded provider flushes and contained exporter failures so telemetry cannot replace the function result.
-- Updated the agent manifest, installer, adapters, and repository documentation for `cloudwatch-instrumentation`.
+- Expanded the static policy gate to cover Python, TypeScript, JavaScript, metric/log operation links, Lambda lifecycle, sensitive content, and unsafe raw logging.
+- Updated Lambda guidance for optimized ADOT/Application Signals or verified collectorless SDK ownership, bounded flushes, and platform-delivered JSON logs.
+- Updated the skill manifest, installer, agent adapters, and repository documentation for `cloudwatch-instrumentation`.
 
-The repository remains pre-release. Pin exact OpenTelemetry packages and AWS collector/layer versions after integration testing in the target region.
+### Removed
+
+- Removed inherited vendor-specific instrumentation rules and obsolete AWS X-Ray SDK/embedded-collector recommendations; AWS-compatible propagation remains implemented through OpenTelemetry.
