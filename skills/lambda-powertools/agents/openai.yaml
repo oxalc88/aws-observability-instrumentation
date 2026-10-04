@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lambda Powertools"
+  short_description: "Choose useful Lambda logs, EMF metrics, and traces"
+  default_prompt: "Use $lambda-powertools to choose and implement the minimum useful telemetry for this TypeScript Lambda."

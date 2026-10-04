@@ -1,5 +1,13 @@
 # Codex
 
+Both profiles are supported. Commands below retain the root OTel default; for Lambda TypeScript Powertools, add `--skill=lambda-powertools`. See [profile selection and conflict handling](README.md).
+
+```bash
+scripts/install.sh --skill=lambda-powertools --agent=codex --project=/path/to/project
+```
+
+The Powertools profile uses a separate contract and compact enable instructions (a selected-directory symlink for Claude Code). It does not concatenate OTel rules.
+
 Install a managed instruction block into a project:
 
 ```bash
