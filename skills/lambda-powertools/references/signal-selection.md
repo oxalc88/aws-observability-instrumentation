@@ -1,32 +1,46 @@
-# Signal selection
+# Coverage selection before APIs
 
-Record one decision per operational question; a short code comment or existing instrumentation document is enough. Do not build a new telemetry registry system merely to record these decisions.
+Inventory applicable boundaries, then apply the [surface prescriptions](lambda-surfaces.md). Agents supply the prescribed operational questions when the user has no telemetry preference. User uncertainty does not disable coverage. Metrics answer aggregate questions; logs explain material outcomes; traces reconstruct meaningful dependency/distributed paths. Evaluate them together.
 
-| Field | Required decision |
+## Required coverage record
+
+Use a short comment or the project's existing instrumentation document, not a new registry/configuration system. Record each required measurement or diagnostic/path contract separately; one whole-function “covered” label is insufficient.
+
+| Field | Required meaning |
 | --- | --- |
-| Question | What must an operator know? |
-| Action and owner | Who responds, and what investigation/action follows? |
-| Existing coverage | Which AWS metric, log, or trace already answers it? |
-| Signal or omission | Metric, log, trace, a justified combination, or none; evaluate all branches together |
-| Tracing decision | Required `enabled` or `disabled`, reason, owner, dependency/workflow boundaries, and propagation needs; enabled also declares activation and sampling |
-| Boundary and meaning | Where is work complete? Per attempt, record, batch, or workflow? |
-| Safe contract | Closed dimensions; category-specific log fields; safe trace metadata |
-| Cost | Expected series, EMF records, log bytes, subsegments, retention |
+| Surface/question | Applicable boundary and aggregate, diagnostic, or path question |
+| Owner/action | Existing emitter and operational investigation/response owner |
+| Coverage state | `managed`, `custom`, `not_applicable`, or `exception` |
+| Evidence | Metric/query, diagnostic event contract, or verified trace path plus deployment configuration |
+| Semantics | Population, start/stop, attempt/record/batch/workflow, success/failure meaning, unit/statistic and dimensions |
+| Safety/cost | Bounded fields/dimensions, sampling, frequency, EMF/log/trace volume and retention |
+| Gap/exception | Missing capability, reason, mitigation, responsible owner, and review date |
 
-Metrics come first for aggregate monitoring and alerts: identify required coverage and reuse managed metrics before adding custom ones. Selecting a diagnostic log does not close an unanswered rate/count question.
+- `managed`: existing AWS or application telemetry supplies the requirement; name it and prove equivalence. This label means existing coverage, not necessarily AWS ownership.
+- `custom`: implement the missing coverage with the selected Powertools utility, one boundary owner, and a governed contract.
+- `not_applicable`: the surface/event/question does not exist (for example no retries, remote dependencies, or queue). State the reason. Low volume or an unspecified user preference is not non-applicability.
+- `exception`: coverage is required but missing or deliberately waived. Identify reason, mitigation, owner, and review date. Report it as a gap; do not call the requirement complete. Follow existing project approval policy, without inventing an extra permission workflow.
 
-## Examples of independent decisions
+Unknown is an assessment task, not a final coverage state. Inspect existing code/deployment. If evidence remains unavailable, record an exception rather than inventing equivalence. Fill straightforward gaps autonomously; ask only when an unresolved business/deployment constraint changes the decision.
 
-| Question | Minimum useful choice | Why |
-| --- | --- | --- |
-| Is Lambda timing out more often? | Existing Lambda telemetry | Do not recreate timeout/error counters |
-| Which validation rule rejected this invocation? | Log | Rule/path/type and request correlation explain one outcome; this is diagnosis-only |
-| Is the validation rejection rate increasing? | Existing adequate outcome metric, or one custom outcome metric; diagnostic log separately if needed | Count all completed decisions by accepted/rejected result; handled 400s are not Lambda Errors |
-| Is fallback usage increasing among completed records? | Two batch-aggregated metrics | Fallback total / processed-record total; no per-item log required if fallback is expected and harmless |
-| Which downstream call consumed the request time? | Trace | Causal path and dependency timings; Lambda Duration cannot locate the delay |
-| Why did a payment dependency fail? | Log, plus trace only if path/timing matters | Bounded dependency reason and retry evidence explain failure; trace answers a different question |
-| Did a trivial mapper run? | None | No operational action follows |
+## Equivalence checks
 
-For a combination, state a different question for each signal. Do not copy complete diagnostic fields into every signal. A small shared operation/failure category is useful correlation, not a reason to publish everything three times.
+A managed/custom metric can satisfy a prescribed measurement only if its population, boundary, outcome semantics, unit, available statistic, dimensions/scope, enabled delivery, and freshness match. Record the query/denominator for rates. A proposed dashboard is not evidence that a metric exists.
 
-Use deployment-native AWS metrics for infrastructure questions. Custom metrics may be justified for handled rejections, partial failures, or workflow outcomes that Lambda `Errors` does not represent. Prove the gap rather than assuming it.
+Lambda invocation metrics can cover Lambda execution; they do not automatically cover handled 400s, record outcomes, workflow stages, or caller-observed SDK timings. AWS dependency metrics may mix callers and measure server-side time. Queue receive/delete counts are not unique business operations. Some managed metrics need explicit enablement. Verify actual deployment rather than relying on a metric name.
+
+Existing logs must satisfy the category's safe diagnostic contract and survive deployed levels/retention. Existing traces must instrument the required boundaries, enable collection, and verify supported handoffs and sampling. A correlation ID alone is not trace coverage. Do not add duplicate capture owners.
+
+## Canonical decisions
+
+| Surface/question | Coverage |
+| --- | --- |
+| Lambda invocation errors and duration | `managed`: Lambda Errors/Invocations/Duration with matching function scope |
+| Handled request rejection rate | `custom` unless equivalent request telemetry exists: count all request outcomes, query rejected / total |
+| Validation failure diagnosis | `custom` Logger event with safe rule/path/type and correlation |
+| Dependency call aggregate latency/failures | `custom` unless caller-specific equivalent metrics exist; trace timing alone is insufficient |
+| DynamoDB/S3 caller timeline | `custom` meaningful Tracer boundary, or `managed` existing trace owner |
+| Local batch fallback trend | `custom` fallback and completed-record counts; unexpected failures also require diagnostics |
+| Local helper with no operational surface | `not_applicable`: no helper metrics or subsegments |
+
+For each workload record tracing as `enabled` or `disabled` plus coverage state/reason. Enable for meaningful dependency or distributed surfaces. Disable only for non-applicability, an existing owner (workload tracing stays enabled), or an explicit reported exception. Sampling is runtime policy, not an opt-out from assessment or metric coverage.

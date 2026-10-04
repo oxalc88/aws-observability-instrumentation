@@ -17,17 +17,19 @@ Inspected baseline:
 | Area | Existing root contract/implementation | New Lambda contract |
 | --- | --- | --- |
 | Scope | Multiple AWS runtimes, TypeScript plus Python parity | Lambda TypeScript/Node.js only |
-| Metrics | `MetricDef` + shared OTel emitter; native OTLP/PromQL preferred | Five purposes retained; direct Powertools EMF publication when justified |
+| Metrics | `MetricDef` + shared OTel emitter; native OTLP/PromQL preferred | Required surface measurements and five purposes retained; equivalent existing coverage or direct Powertools EMF gaps |
 | Logs | `LogEventDef` + custom governed structured logger; metric linkage and mandatory sampling metadata | Direct Powertools Logger; independent events with failure-category diagnostics |
 | Traces | OTel required; X-Ray SDK prohibited by rules and CI | Explicit tracing enable/disable decision; Powertools Tracer uses the X-Ray SDK |
-| Lambda example | Root handler defines invocation/failure metrics and completion/failure logs | Examples deliberately omit unnecessary signals |
+| Lambda example | Root handler defines invocation/failure metrics and completion/failure logs | Examples implement prescribed applicable metrics, diagnostic logs and meaningful traces |
 | Delivery | OTel providers/ADOT/collector topology; platform logs preferred | Lambda stdout for Logger and EMF; Lambda active tracing for Tracer |
 | Installation | Fixed root profile; Claude symlink, Codex enable block, other adapters concatenate root references | Explicit `--skill`; nested symlink or compact enable block; conflict rejection |
 | Enforcement | Cross-language gate rejects X-Ray/raw logger bypass | Separate rubric and focused example/install checks; root gate stays scoped |
 
 The root skill already warns against mechanically creating the metric triad. Its current Lambda example nevertheless creates custom invocation/failure metrics and completion logging without a consumer-specific decision. The Powertools skill makes the selection record precede API choice; this task does not refactor the root examples.
 
-Metrics remain the primary aggregate monitoring/alert signal. Independent selection means custom Powertools metrics are unnecessary when managed coverage suffices, not that aggregate requirements may be replaced with logs or sampled traces. The validation example intentionally covers individual diagnosis; rejection-rate monitoring requires compatible accepted/rejected outcome counts. Tracer is useful even within a single Lambda when timed DynamoDB/S3 calls locate execution latency. Selection, deployment activation, and per-invocation sampling are separate decisions. Tracing selection is mandatory for every workload: enable when dependency timing or distributed causality is required, or document an opt-out reason and existing owner. Reference/example order does not prescribe Logger → Metrics → Tracer implementation.
+Preserve Sentry's prescriptive surface coverage, rather than asking the user to invent a metric requirement for each feature. Every applicable request/dependency/stage/queue/retry/fallback/resource surface gets its specified aggregate measurements. Managed AWS/application telemetry can satisfy a measurement only with equivalent population, boundary, outcomes, unit/statistic, scope/dimensions and actual enabled delivery. A server-side DynamoDB latency metric is not caller-observed SDK latency. Logs and sampled traces cannot replace required aggregate coverage.
+
+Use managed/custom/not_applicable/exception per requirement. Unknown triggers assessment; omissions do not silently become opt-outs. Exceptions expose the missing capability, mitigation, owner and review date. Agents apply the baseline when users have no telemetry preference. General diagnostic logging and meaningful dependency/distributed tracing are extensions of the original Sentry metric contract, not substitutes. Trace selection, deployment activation and invocation sampling remain separate; reference order is not implementation order.
 
 Root logging is governed and safe but its event schema alone does not guarantee a specific failed rule or dependency diagnosis. The new skill extends diagnostic sufficiency rather than inheriting mandatory metric linkage or inventing another logger.
 
@@ -38,14 +40,20 @@ Root logging is governed and safe but its event schema alone does not guarantee 
 | Outcome, latency, load, resource, correctness | Retain purpose; map semantics to CloudWatch units/statistics rather than Sentry/OTel constructors |
 | Closed tags and immutable meaning | Retain bounded dimensions and explicit meaning/version migrations |
 | Choke points and reusable surfaces | Retain one emission owner; use Powertools utility/middleware APIs and small category helpers |
-| Automatic surface emission triads | Replace with independent question-based signal choice |
+| Required surface emissions | Preserve measurement prescription; adapt ownership to proven equivalent AWS/application coverage, otherwise implement Powertools gaps |
 | Cost metadata and loop aggregation | Retain budgeting/aggregation; include EMF log volume and CloudWatch series |
 | Sampling weights/rate-limit counters | Do not port vendor-specific assumptions or create a governance runtime; exact totals stay unsampled |
 | Observability must preserve business behavior | Retain best-effort publication/logging/trace cleanup and focused failure checks |
 | Logs outside the core metric contract | Extend with material event selection and category-specific safe diagnostics |
-| AST/test enforcement | Reuse review plus focused verification; do not claim a generic Powertools gate exists |
+| AST/test enforcement | Preserve enforcement intent through boundary contract tests and review; no claim of full 13-rule Powertools AST parity |
 
 No Sentry APIs, product-specific spans, or Sentry logging integration are copied.
+
+## Tradeoffs and implementation scope
+
+Literal copying of every Sentry custom metric gives uniform emissions but duplicates managed invocation/queue signals and adds CloudWatch series/EMF volume. Per-feature opt-in lowers immediate volume but loses default coverage when the user does not specify requirements. Required equivalent coverage preserves the prescription with less duplication, at the cost of an explicit equivalence/exception review.
+
+Keep definitions local to existing project boundaries, with stable identities, versioned migration, bounded taxonomy and volume budgets. The canonical TypeScript examples use a tiny synchronous publication adapter for cleanup/failure isolation, not a generic registry/logger framework. Request and dependency durations preserve individual samples; batch duration remains a batch sample. Buffer aggregation cuts log records, not series count. No rate cap or sampling may silently discard required exact outcome/resource totals.
 
 ## Separate loading and installation
 
@@ -59,11 +67,11 @@ Before any installation write, check known project and ancestor discovery surfac
 
 Repository checks cover selected-profile isolation, defaults, idempotence, legacy concatenation detection, marker safety, and preservation of local instructions. Powertools examples are type-checked and exercise diagnostic fields/privacy, one EMF publication per batch, warm cleanup, aggregation, sink/publication failure containment, and meaningful dependency trace cleanup. Root TypeScript/Python checks remain unchanged in scope.
 
-A forward trial loaded only the new skill/references for an HTTP Lambda with validation, DynamoDB, fallback, and SQS. It selected Logger + Tracer, removed helper counts/subsegments/raw data, and omitted custom metrics until a separate aggregate need exists. This is one decision-quality check, not proof of every scenario.
+The example checks verify request acceptance/rejection coverage, caller-specific dependency failure/throttle/timing, batch stage/record/fallback totals, safe diagnostics, warm-state cleanup and SDK/sink failure containment. Required surface coverage and managed equivalence are review obligations; the focused tests do not prove every consumer surface is instrumented.
 
 Local checks do not prove EMF extraction, IAM, Lambda active tracing, trace sampling, or continuity through SQS/SNS/EventBridge. Verify those during the consumer's non-production rollout. A correlation ID is not a trace parent, and a batch can contain multiple producer contexts.
 
-Powertools' full-error capture flag does not govern independent SDK instrumentation. The tracing example uses a manual meaningful dependency subsegment, disables automatic HTTP/response/error capture, and avoids duplicate SDK capture. Consumers that choose SDK capture must review its data separately. The example's fixed application error policy avoids raw runtime error text; consumer business/retry semantics remain the consumer's responsibility.
+Powertools' full-error capture flag does not govern independent SDK instrumentation. The tracing example uses manual meaningful handler/dependency subsegments with independent best-effort cleanup, disables automatic HTTP/response/error capture, and avoids duplicate SDK capture. Consumers that choose SDK capture must review its data separately. The example's fixed application error policy avoids raw runtime error text; consumer business/retry semantics remain the consumer's responsibility.
 
 No E2E framework, user-story automation, test-generation system, non-Lambda runtime, Python parity, or application feature is introduced.
 

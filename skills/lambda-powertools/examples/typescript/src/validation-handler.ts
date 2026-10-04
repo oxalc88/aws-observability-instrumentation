@@ -1,13 +1,18 @@
+import { Metrics, MetricUnit } from "@aws-lambda-powertools/metrics";
+import { publishMeasurements } from "./metric-publication.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import type { APIGatewayProxyEventV2, Context } from "aws-lambda";
 
-// Question: Which safe rule rejected an enrichment request, and where?
-// Tracing: disabled; local validation has no dependency or distributed path.
-// AWS errors do not explain handled 400s. No aggregate question or dependency
-// path requires custom Metrics or Tracer in this diagnosis-only example.
-// If rejection rate needs monitoring, count all completed validation decisions
-// as accepted/rejected at this request boundary; logs do not replace that metric.
-// See references/metrics.md for the aggregate contract and managed-first check.
+// Coverage: Lambda invocation metrics managed; application requests custom.
+// Questions: request/rejection volume, classified failures and request latency;
+// diagnostic rule/location. Tracing not_applicable: only local validation.
+// Owner: orders. Population: completed attempts, not unique business operations.
+// Requests and RequestFailures: outcome Count/Sum; RequestDuration: latency ms.
+// Dimensions: service=orders, result=accepted|rejected|failed,
+// failure_class=none|validation_failure|internal_error, status_class=2xx|4xx|5xx.
+// At most 3 valid tuples/9 series.
+// One EMF record per completed request; no IDs, rules, or payload metadata.
+export const metrics = new Metrics({ namespace: "Example/Validation", serviceName: "orders" });
 export const logger = new Logger({ serviceName: "orders", logLevel: "INFO" });
 const supportedFields = ["notes", "scheduled_at"] as const;
 
@@ -49,7 +54,7 @@ function reject(
   return { statusCode: 400, body: JSON.stringify({ code }) };
 }
 
-export async function handler(event: APIGatewayProxyEventV2, context: Context) {
+async function validateRequest(event: APIGatewayProxyEventV2, context: Context) {
   let body: unknown;
   try {
     body = JSON.parse(event.body ?? "null");
@@ -69,3 +74,34 @@ export async function handler(event: APIGatewayProxyEventV2, context: Context) {
 
 // Per-record fields are passed directly, so there are no mutable invocation keys
 // to reset and no raw event auto-logging middleware to enable accidentally.
+
+// Reusable request boundary owns metrics; reject() owns one diagnostic event.
+export async function handler(event: APIGatewayProxyEventV2, context: Context) {
+  const started = performance.now();
+  let result = "failed";
+  let failureClass = "internal_error";
+  let statusClass = "5xx";
+  try {
+    const response = await validateRequest(event, context);
+    result = response.statusCode < 400 ? "accepted" : "rejected";
+    failureClass = result === "accepted" ? "none" : "validation_failure";
+    statusClass = `${Math.floor(response.statusCode / 100)}xx`;
+    return response;
+  } catch (error) {
+    try {
+      logger.error("Validation operation failed", {
+        "event.name": "order.validation.failed", "operation.name": "order.enrich",
+        stage: "validate", "failure.class": "internal_error",
+        reason: "unexpected_validation_failure", location: "validateRequest",
+        request_id: context.awsRequestId,
+      });
+    } catch { /* Preserve the original error. */ }
+    throw error;
+  } finally {
+    publishMeasurements(metrics, [
+      { name: "Requests", unit: MetricUnit.Count, value: 1 },
+      { name: "RequestFailures", unit: MetricUnit.Count, value: Number(result !== "accepted") },
+      { name: "RequestDuration", unit: MetricUnit.Milliseconds, value: performance.now() - started },
+    ], { result, failure_class: failureClass, status_class: statusClass });
+  }
+}

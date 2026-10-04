@@ -1,60 +1,55 @@
 ---
 name: lambda-powertools
-description: Choose and implement the minimum useful CloudWatch telemetry for AWS Lambda in TypeScript/Node.js with AWS Lambda Powertools Logger, Metrics (EMF), and explicitly selected Tracer. Use when reviewing Lambda observability, deciding what to measure/log/trace, diagnosing validation or dependency failures, controlling CloudWatch cost/noise, or adding Powertools instrumentation. Require a documented tracing enable/disable decision; enable for required dependency timing or distributed causality. Excludes generic OTel architecture, other runtimes, Python parity, E2E frameworks, and test generation.
+description: Apply prescribed operational coverage for AWS Lambda TypeScript/Node.js using CloudWatch and AWS Lambda Powertools Logger, Metrics (EMF), and Tracer. Use when adding or reviewing request, dependency, workflow, queue/batch, retry, fallback, resource, diagnostic logging, or distributed tracing instrumentation. Preserve Sentry-style required surface measurements; reuse proven equivalent AWS telemetry, fill gaps, and record exceptions. Excludes generic OTel architecture, other runtimes, Python parity, E2E frameworks, and test generation.
 ---
 
 # Lambda Powertools
 
-Start with an operational question. Add the minimum signal that answers it with safe diagnostic value and acceptable cost. Do not start by adding Logger + Metrics + Tracer.
+Start with an operational question. Apply required coverage at applicable boundaries; add the minimum telemetry that fulfills it safely and within budget. Do not scatter Logger + Metrics + Tracer across helpers.
 
-## Decide before coding
+## Coverage before coding
 
 ```mermaid
 flowchart TD
-    E["Material operational event"] --> Q["What question needs an answer?"]
-    Q --> A["Across executions"]
-    Q --> O["One execution or outcome"]
-    A --> M["Metric"]
-    O --> L["Log"]
-    Q --> P["Path or timing across dependencies"]
-    P --> T["Trace"]
+    S["Applicable operational surface"] --> Q["Prescribed questions"]
+    Q --> M["Metrics: aggregate behavior"]
+    Q --> L["Logs: material outcome diagnosis"]
+    Q --> T["Traces: dependency and distributed path"]
+    M --> C["Prove existing coverage or fill gaps"]
+    L --> C
+    T --> C
 ```
 
-Metrics are the primary signal for aggregate monitoring, trends, and alerts. Check that each required aggregate question has managed AWS or justified custom metric coverage; diagnostic logs and sampled traces do not replace that coverage. Custom metrics remain optional when managed metrics suffice.
+Evaluate all signals together; order here is not implementation priority. Metrics are primary for aggregate monitoring/alerts. Logs and sampled traces cannot replace metric coverage. Required measurements do not imply custom metrics when AWS/application equivalents already exist.
 
-Evaluate all three branches together; their order here is not an implementation sequence. A trace can be useful without a log. Every workload must explicitly record tracing as `enabled` or `disabled` with a reason. Enable it when meaningful dependency timing or distributed causality is required; omission is not an opt-out. No new signal is valid when existing telemetry answers the question, with its owner recorded.
-
-1. Inspect existing telemetry, Lambda trigger, dependencies, retry/ack behavior, and Powertools versions. Reuse the existing signal owner.
-2. Write a short decision record: question, operational action/owner, existing coverage, selected signal or omission, tracing enabled/disabled and reason, emission boundary, safe fields/dimensions, and volume estimate. Read [signal-selection](references/signal-selection.md) if uncertain.
-3. For a metric, select exactly one purpose: `outcome`, `latency`, `load`, `resource`, or `correctness`. Require aggregate meaning, bounded dimensions, and value greater than metric + EMF/log + cardinality + maintenance cost. Read [metrics](references/metrics.md) before using Metrics.
-4. For a log, choose a material outcome and its failure-category contract. Require operation, stage, class, specific safe rule/reason, location or dependency, and correlation where applicable. Read [logging](references/logging.md), [diagnostic sufficiency](references/diagnostic-sufficiency.md), and [failure taxonomy](references/failure-taxonomy.md) before adding a failure event.
-5. Decide tracing explicitly for the workload, including SDK dependencies and distributed stages. Enable for required path/timing/causality; otherwise document why it is disabled. Read [tracing](references/tracing.md) for activation, sampling, capture safety, and transport support. Existing instrumentation may own tracing; do not add a duplicate Tracer.
-6. Put emissions at Lambda/request, workflow, dependency, retry, queue/batch, or fallback boundaries. Keep one owner per outcome; aggregate loops. Read [Lambda surfaces](references/lambda-surfaces.md).
-7. Use Powertools directly. Do not introduce a competing logger or import the root OTel definitions/emitter. Initialize selected utilities outside the handler; reset invocation state and use one metric publication owner.
-8. Review [cost and noise](references/cost-and-noise.md), then apply the [review rubric](references/review-rubric.md) and [enforcement guidance](references/enforcement.md). Report what was deliberately omitted and why.
+1. Inspect Lambda triggers, dependencies, stages, retries/acks, fallback/resource use, existing emitters, deployment, and Powertools versions. Apply [required surface coverage](references/lambda-surfaces.md) even when the user has no preference.
+2. Record each requirement as `managed`, `custom`, `not_applicable`, or `exception`, with question, owner, evidence, semantics and cost. Prove existing equivalence; report gaps with mitigation, owner and review date. Unknown requires assessment, not silent opt-out. Read [signal selection](references/signal-selection.md).
+3. Define custom metrics once: fixed name/unit, exactly one purpose (`outcome`, `latency`, `load`, `resource`, `correctness`), population, boundary, statistic/denominator, bounded dimensions, frequency, sampling and budget. Version meaning changes. Read [metrics](references/metrics.md) and [canonical contracts](references/example-contracts.md).
+4. Require one safe diagnostic event for each material failure/rejection/degradation/security outcome. Use its category contract, not generic `invalid_input`. Read [logging](references/logging.md), [diagnostic sufficiency](references/diagnostic-sufficiency.md), and [failure taxonomy](references/failure-taxonomy.md).
+5. Require tracing of meaningful dependencies and distributed paths. Record enabled/disabled and coverage state; reuse an existing owner, or document non-applicability/exception. Verify activation, permissions, sampling, capture safety and supported handoffs. Read [tracing](references/tracing.md).
+6. Extend reusable boundary patterns with Powertools directly. Keep one emission owner, aggregate loops, preserve latency samples, clear warm state and contain telemetry failures. Do not import the root OTel runtime or create a competing logger/framework.
+7. Budget metric series + EMF/log volume + trace volume + maintenance. Reduce duplicates/dimensions/publications before exceptions. Read [cost and noise](references/cost-and-noise.md).
+8. Apply [review rubric](references/review-rubric.md) and [enforcement](references/enforcement.md). Report covered requirements and unresolved gaps. Do not claim unverified managed equivalence or trace continuity.
 
 ## Hard rules
 
-- Never log raw events/bodies/headers, tokens, credentials, arbitrary errors, or unrestricted exception messages/stacks. Apply the same privacy rule to trace metadata and EMF metadata.
-- Use fixed event names/messages and allowlisted bounded diagnostic values. Generic `invalid_input` alone is insufficient.
-- Do not narrate internal steps at INFO or add metrics/subsegments for trivial helpers.
-- Do not duplicate Lambda/AWS metrics, terminal logs, SDK subsegments, or metric publication. Metrics are classic CloudWatch EMF, not native OTLP/PromQL.
-- Do not load the root `cloudwatch-instrumentation` contract for this scope. Powertools Tracer uses X-Ray; the root skill requires OTel. Select one architecture for a workload.
-- Keep business outcomes intact if telemetry fails. Do not sample exact outcome/resource totals. Hard timeouts can bypass cleanup; use managed Lambda telemetry for them.
+- Never emit raw events/bodies/headers, credentials/tokens, arbitrary exception text/stacks, or sensitive data in logs, trace metadata, or EMF. Use allowlisted bounded diagnostic values.
+- No narrative INFO, helper metrics/subsegments, duplicate terminal logs, SDK/manual subsegments, or publication owners.
+- Keep exact outcome/resource totals unsampled. A duration total is not a latency distribution. A processed record is not an acknowledged message or unique business event.
+- Keep business results/retries intact when telemetry fails; hard timeouts can bypass cleanup. Retain managed platform coverage and verify sustained telemetry loss separately.
+- Keep this contract separate from root `cloudwatch-instrumentation`: classic EMF metrics and X-Ray-backed Powertools Tracer, not root OTel/OTLP requirements.
 
-## Load only what the task needs
+## Load on demand
 
 | Need | Read |
 | --- | --- |
-| Scope and invariants | [charter](references/charter.md) |
-| Signal choice and omissions | [signal-selection](references/signal-selection.md) |
-| Aggregate contracts and EMF publication | [metrics](references/metrics.md) |
-| Material log events and safe Powertools use | [logging](references/logging.md) |
-| Failure-specific required fields | [diagnostic-sufficiency](references/diagnostic-sufficiency.md), [failure-taxonomy](references/failure-taxonomy.md) |
-| Dependency paths, timing, and async limits | [tracing](references/tracing.md) |
-| Handler, retry, batch, fallback ownership | [lambda-surfaces](references/lambda-surfaces.md) |
-| Cost review | [cost-and-noise](references/cost-and-noise.md) |
-| Review and verification | [review-rubric](references/review-rubric.md), [enforcement](references/enforcement.md) |
-| Logger only; diagnosis, not rejection-rate monitoring | [validation-handler.ts](examples/typescript/src/validation-handler.ts) |
-| Metrics only; batch fallback ratio | [batch-metrics.ts](examples/typescript/src/batch-metrics.ts) |
-| Tracer and one diagnostic log; no custom metric | [dependency-handler.ts](examples/typescript/src/dependency-handler.ts) |
+| Scope, Sentry preservation and AWS adaptation | [charter](references/charter.md) |
+| Required measurements/events/paths | [Lambda surfaces](references/lambda-surfaces.md) |
+| Coverage states, equivalence and exceptions | [signal selection](references/signal-selection.md) |
+| Metric definitions, lifecycle, publication | [metrics](references/metrics.md), [example contracts](references/example-contracts.md) |
+| Safe diagnostic logging | [logging](references/logging.md), [diagnostic sufficiency](references/diagnostic-sufficiency.md), [failure taxonomy](references/failure-taxonomy.md) |
+| Dependency/distributed tracing and activation | [tracing](references/tracing.md) |
+| Cost, review and checks | [cost/noise](references/cost-and-noise.md), [review](references/review-rubric.md), [enforcement](references/enforcement.md) |
+| Request metrics + validation diagnostics; tracing not applicable | [validation-handler.ts](examples/typescript/src/validation-handler.ts) |
+| Batch outcome/duration/fallback metrics + terminal diagnostics | [batch-metrics.ts](examples/typescript/src/batch-metrics.ts) |
+| Dependency metrics + meaningful trace + terminal diagnostics | [dependency-handler.ts](examples/typescript/src/dependency-handler.ts) |

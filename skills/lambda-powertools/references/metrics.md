@@ -1,10 +1,10 @@
 # Metrics: aggregate operational questions
 
-Metrics are the primary signal for aggregate monitoring, trends, and alerts. Required aggregate questions must have metric coverage: use managed AWS metrics first, then custom metrics for demonstrated gaps. Powertools Metrics is optional when existing metrics suffice; optional does not mean an operational monitoring requirement may be ignored. Reject a custom metric unless it answers a question across executions and supports a defined operational action.
+Apply the required aggregate measurements in [Lambda surfaces](lambda-surfaces.md), even when the user has not requested individual metrics. Powertools custom emission is unnecessary only when equivalent existing coverage is proven, the surface is not applicable, or a visible exception is recorded. Logs and sampled traces do not replace required counts, rates, or latency distributions.
 
-Logs diagnose individual outcomes; sampled traces explain individual paths and timings. Neither substitutes for reliable aggregate counts or rates. A successful Lambda invocation can still contain a handled validation rejection or partial batch failure, so Lambda `Errors` alone cannot measure those outcomes.
+Every baseline measurement answers a prescribed operational question. Additional metrics still need a separate question/action and cost justification; an operation's existence alone does not justify helper-level instrumentation.
 
-For validation monitoring, define an outcome Count at the request boundary for **every completed validation decision**, with a closed `result=accepted|rejected` dimension. Query rejected Sum / total Sum over the same window and population. Keep request IDs and diagnostic rule/path details in the rejection log. Add this metric only when rejection volume/rate is an operational requirement and adequate existing coverage is absent; the Logger-only example covers diagnosis alone.
+For validation requests, count every completed request and conditional classified rejections/failures at the request boundary, plus request duration. Query rejection Sum / request Sum over the same window/population. Keep rule/path/request details in Logger. Lambda Errors does not count handled 400s. The canonical validation example implements this coverage rather than assuming a future monitoring requirement.
 
 | Purpose | Meaning | Powertools/CloudWatch representation |
 | --- | --- | --- |
@@ -18,7 +18,7 @@ CloudWatch Metrics does not expose OTel counter/gauge/histogram constructors. Pr
 
 ## Contract before `addMetric`
 
-Declare a fixed name, namespace, unit, purpose, question, owner, completion/start-stop boundary, statistic/query, dimension keys and closed values, emission frequency, and volume estimate. Keep meanings stable; changed unit/boundary/dimension meaning needs an explicit version/migration with downstream consumers.
+Declare a fixed name, namespace, unit, purpose, question, owner, population, completion/start-stop boundary, statistic/query and denominator, dimension keys and closed values, emission frequency, sampling policy, and volume estimate. Keep meanings stable; changed unit/boundary/dimension meaning needs an explicit version/migration with downstream consumers.
 
 Search existing AWS/custom metrics first. Lambda Invocations, Errors, Duration, Throttles, concurrency, and managed queue metrics often suffice. A batch record outcome is different from a Lambda invocation outcome; partial SQS failures can return successfully and require a separate question.
 
@@ -34,6 +34,6 @@ CloudWatch series identity is namespace + metric name + complete dimension set/v
 - Do not sample exact totals. If latency sampling is justified, document bias and percentile limits; do not import Sentry's weighting claims.
 - Production publication errors must not replace application results. Catch SDK/serialization failures at the selected publication owner; verify loss separately. A hard timeout may prevent `finally`.
 
-Require operational value greater than **custom metric + EMF/log ingestion/storage/query volume + cardinality + maintenance**. See [cost-and-noise](cost-and-noise.md).
+The prescribed baseline establishes operational value; prove existing equivalence or record an exception if its budget cannot be met. For both baseline and additions, require operational value greater than **custom metric + EMF/log ingestion/storage/query volume + cardinality + maintenance**. See [cost-and-noise](cost-and-noise.md).
 
 API source: [Powertools Metrics](https://docs.aws.amazon.com/powertools/typescript/latest/features/metrics/).

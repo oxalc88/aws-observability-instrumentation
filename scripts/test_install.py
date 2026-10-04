@@ -53,6 +53,9 @@ class InstallerTests(unittest.TestCase):
                         self.assertIn(str(REPO / "skills/lambda-powertools/SKILL.md"), before)
                         self.assertNotIn("Use OpenTelemetry for traces", before)
                         self.assertNotIn("MINIMAL_CONCAT", before)
+                        self.assertIn("required surface coverage", before)
+                        self.assertIn("existing equivalence", before)
+                        self.assertIn("No silent coverage gaps", before)
                         self.assertEqual(before.count("<!-- BEGIN lambda-powertools -->"), 1)
                         self.assertLess(len(before), 1500)
 

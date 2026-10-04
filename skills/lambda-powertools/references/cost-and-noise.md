@@ -1,5 +1,7 @@
 # Cost and noise
 
+Apply the surface baseline first. Reuse proven equivalent metrics, aggregate publication, and reduce dimensions before considering exceptions. A cost limit needs an explicit coverage gap, mitigation, owner, and review date; do not silently disable required measurements. Additional metrics need a distinct operational question.
+
 Every custom metric must pass:
 
 **operational value > CloudWatch metric + EMF/log volume + cardinality + maintenance cost**.

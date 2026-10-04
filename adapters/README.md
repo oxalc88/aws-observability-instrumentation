@@ -36,7 +36,8 @@ Test the Powertools installation with:
 
 ```text
 Use lambda-powertools to diagnose handled validation 400s in this TypeScript
-Lambda. Decide whether custom metrics or tracing answer any separate question.
+Lambda. Apply the required surface baseline; prove existing equivalence or fill
+metric, diagnostic log, and dependency/distributed trace coverage gaps.
 ```
 
-A loaded skill should choose safe rule/path/type evidence and correlation, omit unjustified metrics/traces, and avoid raw payloads/errors. See [Powertools SKILL.md](../skills/lambda-powertools/SKILL.md).
+A loaded skill should apply prescribed coverage, prove managed equivalence, supply safe rule/path/type evidence and correlation, and report non-applicability/exceptions without raw payloads/errors. See [Powertools SKILL.md](../skills/lambda-powertools/SKILL.md).

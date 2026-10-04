@@ -1,12 +1,12 @@
 # Tracing: useful path and timing
 
-Tracing selection is mandatory; trace emission depends on that explicit decision. Evaluate tracing alongside metrics and logs, not after them. Enable tracing when operators require meaningful dependency timing, distributed causality, a path across AWS services/Lambdas, or workflow investigation. A simple local validation/transform Lambda may explicitly disable it with a reason.
+Tracing selection is mandatory; trace emission depends on that explicit decision. Evaluate tracing alongside metrics and logs, not after them. Prescribe tracing for meaningful external dependency calls and distributed execution paths: their default questions are where caller time went and how execution stages connect. User preference is not needed to establish this baseline. A simple local validation/transform Lambda may mark tracing not applicable and disable it with a reason.
 
 ## Required enable/disable decision
 
-Record `tracing: enabled|disabled`, reason/question, instrumentation owner, dependency/workflow boundaries, and propagation requirements before implementation. When enabled, also record deployment activation and sampling policy. No decision is a review failure.
+Record `tracing: enabled|disabled`, reason/question, instrumentation owner, dependency/workflow boundaries, and propagation requirements before implementation. When enabled, also record deployment activation and sampling policy. No decision is a review failure. Record managed/custom/not_applicable/exception as defined in [signal selection](signal-selection.md). An explicit disable is not sufficient to waive an applicable requirement.
 
-- **Enable:** required timing for DynamoDB/S3/external calls, or required causality across multiple Lambdas, AWS services, queues, or workflow stages. Identify producer → transport → consumer continuity, not just individual handler instrumentation.
+- **Enable:** meaningful DynamoDB/S3/external calls, or distributed execution across multiple Lambdas, AWS services, queues, or workflow stages. Identify producer → transport → consumer continuity, not just individual handler instrumentation.
 - **Disable:** no meaningful dependency/path question, or adequate existing tracing owns these boundaries. Name that existing owner when applicable; do not create duplicate Powertools subsegments. A local-only validation example can disable tracing because it has no dependency or distributed path.
 - **Blocked:** when required continuity is unsupported or unavailable, report the gap and a mitigation/owner. Correlation logs help investigation but do not fulfill the trace requirement. Do not silently mark the requirement complete or disabled merely to reduce cost.
 

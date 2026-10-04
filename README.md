@@ -5,9 +5,9 @@ Two independent coding-agent skills for Amazon CloudWatch. Choose the instrument
 | Choose | When | Contract |
 | --- | --- | --- |
 | CloudWatch/OpenTelemetry (`cloudwatch-instrumentation`, default) | Native OTLP/PromQL metrics, OTel portability, multiple AWS runtimes, or the existing TypeScript/Python governed layer | [Root SKILL.md](SKILL.md) |
-| Lambda Powertools (`lambda-powertools`) | AWS Lambda TypeScript/Node.js with Powertools Logger, optional classic EMF metrics, and explicitly selected X-Ray-backed Tracer | [Powertools SKILL.md](skills/lambda-powertools/SKILL.md) |
+| Lambda Powertools (`lambda-powertools`) | AWS Lambda TypeScript/Node.js with Powertools Logger, classic EMF Metrics, and X-Ray-backed Tracer with prescribed surface coverage | [Powertools SKILL.md](skills/lambda-powertools/SKILL.md) |
 
-For Powertools, start with an operational question. Metrics are primary for aggregate monitoring, trends, and alerts: reuse managed AWS metrics and add custom EMF metrics for gaps. Logs explain individual outcomes; traces reconstruct useful execution paths and dependency timing. Evaluate all signals together, without a Logger → Metrics → Tracer implementation order. Record tracing as enabled or disabled with a reason; enable for required dependency timing or distributed causality. A Lambda does not automatically need Logger + Metrics + Tracer. Read the [architecture analysis](docs/lambda-powertools-architecture.md) for evidence, retained Sentry principles, and the contract differences.
+For Powertools, start with operational questions and apply prescribed coverage at applicable surfaces, even without user preferences. Metrics cover aggregate behavior, logs explain material outcomes, and traces reconstruct meaningful dependency/distributed paths. Reuse existing telemetry only with proven equivalent semantics; otherwise fill gaps or record non-applicability/explicit exceptions. No Logger → Metrics → Tracer implementation order. Read the [architecture analysis](docs/lambda-powertools-architecture.md) for Sentry preservation and AWS adaptations.
 
 This project is based on [Sentry Instrumentation](https://github.com/tortastudios/sentry-instrumentation), a skill that standardizes how application observability is instrumented. Credit for the contract-first approach and guidance on what to measure goes to the team at [Torta Studios](https://tortastudios.com/).
 
@@ -95,13 +95,15 @@ The agent will read `SKILL.md`, select the matching runtime and signal paths, us
 
 The independent skill lives in [`skills/lambda-powertools/`](skills/lambda-powertools/SKILL.md). It governs five metric purposes, material logs with category-specific diagnostic contracts, useful dependency/workflow tracing, and CloudWatch noise/cost. References load on demand. It uses Powertools directly and does not depend on the root OTel logger, metrics registry, collector, or gate.
 
-| Example | Signals selected | Operational question |
-| --- | --- | --- |
-| [Validation handler](skills/lambda-powertools/examples/typescript/src/validation-handler.ts) | Logger only | Which safe rule rejected the request? |
-| [Batch fallback metrics](skills/lambda-powertools/examples/typescript/src/batch-metrics.ts) | Metrics only | Is fallback usage increasing among completed record attempts? |
-| [Dependency handler](skills/lambda-powertools/examples/typescript/src/dependency-handler.ts) | Tracer + one failure log | Where is dependency time spent, and which dependency operation failed? |
+The [surface baseline](skills/lambda-powertools/references/lambda-surfaces.md) preserves Sentry's required request/dependency/stage/queue/retry/fallback measurements. The [coverage record](skills/lambda-powertools/references/signal-selection.md) uses managed, custom, not_applicable, or exception. Unknown requires assessment; an exception remains a gap with mitigation, owner, and review date. Managed Lambda metrics normally cover invocation semantics, but not handled request rejections or caller-specific SDK durations.
 
-The Logger-only validation example answers a diagnostic question; it does not implement rejection-rate monitoring. If that rate needs monitoring, add a justified outcome metric counting accepted and rejected decisions at the request boundary, plus the existing diagnostic log. See [metrics](skills/lambda-powertools/references/metrics.md) for the contract.
+| Example | Coverage implemented | Operational questions |
+| --- | --- | --- |
+| [Validation handler](skills/lambda-powertools/examples/typescript/src/validation-handler.ts) | Request count/failure/duration + safe rejection diagnostics | What is rejection rate and request latency; which rule failed? |
+| [Batch fallback](skills/lambda-powertools/examples/typescript/src/batch-metrics.ts) | Stage duration/failures, aggregated record outcomes/fallbacks + terminal diagnostics | How does the batch perform; is fallback use increasing; where did work fail? |
+| [Dependency handler](skills/lambda-powertools/examples/typescript/src/dependency-handler.ts) | Caller count/failure/throttle/duration + meaningful trace + terminal diagnostics | How often does the call fail/throttle; what is its latency; where did this execution spend time? |
+
+[Canonical contracts](skills/lambda-powertools/references/example-contracts.md) define names, units, purpose, bounded dimensions, owners, ratios, publication budgets and limitations. Local validation/batch examples explicitly mark tracing non-applicable; a real distributed consumer must assess transport continuity and queue/ack coverage. Useful dependency/distributed tracing is prescribed without waiting for user preferences.
 
 Tracing is useful for a Lambda execution timeline with DynamoDB, S3, or other meaningful dependency calls. It requires Lambda active tracing, X-Ray permissions, and handler/dependency instrumentation; only sampled invocations are recorded. See [when tracing is activated](skills/lambda-powertools/references/tracing.md#when-tracing-is-activated). The installer does not enable tracing in AWS.
 

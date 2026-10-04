@@ -2,9 +2,9 @@
 
 Use Powertools Logger directly; it already provides JSON serialization, levels, Lambda context, and trace correlation. A small safe-field function is acceptable. Do not create another logger framework or require the root OTel `LogEventDef` adapter.
 
-## Log-worthy events
+## Required event coverage
 
-Prefer actionable terminal failures, validation rejection, material business-rule rejection, dependency failure, unexpected internal failure, fallback/degradation, and important security decisions. Log another material terminal outcome only when execution-level evidence supports an operator action. Ordinary successful invocations do not require application logs.
+Require one safe diagnostic event for actionable terminal failures, investigable validation/business-rule rejections, terminal dependency failure, unexpected internal failure, material fallback/degradation, and important security decisions. Apply category contracts even without a user logging preference. Existing safe events may satisfy coverage; record owner/evidence rather than adding duplicates. For non-material expected outcomes, document non-applicability. Missing diagnostics need a visible exception, not silent omission. Ordinary successful invocations do not require application logs.
 
 | Level | Use |
 | --- | --- |

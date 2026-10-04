@@ -15,10 +15,10 @@ Use a closed set for `failure.class`; a class groups incidents and does not repl
 | `cancelled` | Work deliberately cancelled | Stage and closed cancellation reason |
 | `unknown` | No declared mapping matches | Safe location and unmapped-failure code |
 
-A fallback can succeed; use a fallback event and correctness metric only when their separate questions justify them. Do not mark every fallback as a terminal operation failure.
+A fallback can succeed; its correctness count is prescribed at the fallback boundary. Require a diagnostic event for material degradation; an expected harmless local fallback can document log non-applicability. Do not mark every fallback as a terminal operation failure.
 
 Classify by typed domain errors or explicit status/code mapping. Do not parse exception messages, generate values from arbitrary class names, or assume `TypeError` means user validation. Unmapped SDK errors become a bounded `unknown`/dependency reason; inspect deployment/version and trace rather than logging the raw error.
 
-Retries require two distinct meanings: failed attempt and terminal operation outcome. If aggregate attempt counts are useful, bucket/aggregate them; log the terminal outcome once. Queue delivery attempt does not prove retry budget exhaustion or DLQ arrival. Model exhausted retries or DLQ/redrive as their own lifecycle boundary.
+Retries require two distinct meanings: failed attempt and terminal operation outcome. Attempt counts and terminal outcomes are prescribed for applicable retry boundaries; bucket/aggregate them and log material terminal outcomes once. Queue delivery attempt does not prove retry budget exhaustion or DLQ arrival. Model exhausted retries or DLQ/redrive as their own lifecycle boundary.
 
-A growing unknown category can justify investigation. It does not automatically justify another custom metric: use existing logs or aggregate failure coverage first.
+A growing unknown category is actionable. Required classified failure coverage must expose unknown as a bounded category; do not add a duplicate unknown metric when that coverage already answers its rate.

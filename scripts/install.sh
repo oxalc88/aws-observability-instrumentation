@@ -152,18 +152,18 @@ skill_enable_block() {
 ## Lambda Powertools instrumentation
 
 For AWS Lambda TypeScript/Node.js telemetry, use only the \`lambda-powertools\`
-contract in this scope. Start with an operational question; independently
-select a metric, diagnostic log, trace, or no new signal. Do not load the root
-CloudWatch/OTel skill for this workload.
+contract in this scope. Apply required surface coverage even without user
+preferences. Prove existing equivalence, fill gaps, or record non-applicability
+and exceptions. Do not load the root CloudWatch/OTel skill for this workload.
 
 1. Read \`$SKILL_ROOT/SKILL.md\`.
 2. Load only the relevant references linked there under \`$SKILL_ROOT/references/\`.
 3. Adapt the selected example from \`$SKILL_ROOT/examples/typescript/src/\`.
 4. Apply the review rubric and enforcement guidance before completing the change.
 
-Use Powertools directly. Metrics use EMF; Tracer uses X-Ray. Evaluate all signals
-together. Explicitly enable or disable tracing with a reason; enable when
-dependency timing or distributed causality is required. No silent omission.
+Use Powertools directly: EMF Metrics, diagnostic Logger, X-Ray Tracer.
+Require metrics at applicable boundaries, safe material-outcome logs, and
+meaningful dependency/distributed traces. No silent coverage gaps.
 Do not dump payloads/errors or add all three signals mechanically.
 <!-- END lambda-powertools -->
 EOF

@@ -2,6 +2,13 @@
 
 Block telemetry that lacks a question, ownership, sufficient diagnostics, safe data, or an acceptable cost budget. Record the signal decision and evidence for any exception; do not waive payload/secret restrictions.
 
+## Required coverage
+
+- Has every applicable request, dependency, stage, queue/batch, retry, fallback and resource surface been assessed against the baseline, even without user preferences?
+- Does each requirement have managed/custom/not_applicable/exception evidence? Missing coverage blocks completion unless a visible exception is recorded under existing project policy.
+- Is managed equivalence proven for population, boundary, unit/statistic, outcomes, dimensions, enablement and freshness? No trace/log substitute for metrics.
+- Do exceptions identify missing capability, reason, mitigation, owner and review date? No unknown final state or hidden cost opt-out.
+
 ## Metrics
 
 - Does every required aggregate monitoring/alert question have adequate managed or custom metric coverage? Do not accept logs or sampled traces as a substitute.
@@ -15,7 +22,7 @@ Block telemetry that lacks a question, ownership, sufficient diagnostics, safe d
 
 ## Logs
 
-- Does an operator need execution-level evidence for this material outcome?
+- Are all prescribed material failures/rejections/degradation/security outcomes covered by one safe diagnostic event, or a visible non-applicability/exception?
 - Is INFO free of step narration and every internal-step logging?
 - Does the event identify operation/stage/class and a specific safe reason/rule plus location/dependency and correlation?
 - Does its category contract provide enough evidence to locate the next investigation without blind reproduction?
@@ -31,7 +38,7 @@ Block telemetry that lacks a question, ownership, sufficient diagnostics, safe d
 - Is there a path/timing/causality question that logs/metrics cannot answer?
 - Are trivial helper subsegments and duplicate SDK/manual capture absent?
 - Are response/error/HTTP capture defaults reviewed and sensitive metadata prevented?
-- Is tracing present where distributed causality is a stated operational requirement?
+- Is tracing present for meaningful external dependencies and distributed paths, without waiting for an explicit user request?
 - Are active tracing, IAM, sampling, upstream configuration, and supported transport continuity verified?
 - Are batch/fan-out parentage and unsampled paths represented honestly?
 
