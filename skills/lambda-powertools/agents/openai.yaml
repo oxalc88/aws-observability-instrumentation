@@ -1,4 +1,4 @@
 interface:
   display_name: "Lambda Powertools"
   short_description: "Apply required Lambda metrics, logs, and traces"
-  default_prompt: "Use $lambda-powertools to assess and fulfill required surface telemetry coverage for this TypeScript Lambda."
+  default_prompt: "Use $lambda-powertools to assess and fulfill required surface telemetry coverage for this Lambda, detecting its language before selecting SDK APIs."

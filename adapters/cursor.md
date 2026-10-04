@@ -1,6 +1,6 @@
 # Cursor
 
-Both profiles are supported. Commands below retain the root OTel default; for Lambda TypeScript Powertools, add `--skill=lambda-powertools`. See [profile selection and conflict handling](README.md).
+Both profiles are supported. Commands below retain the root OTel default; for Lambda Powertools in any language, add `--skill=lambda-powertools`. See [profile selection and conflict handling](README.md).
 
 ```bash
 scripts/install.sh --skill=lambda-powertools --agent=cursor --project=/path/to/project
@@ -8,7 +8,7 @@ scripts/install.sh --skill=lambda-powertools --agent=cursor --project=/path/to/p
 
 The Powertools profile uses a separate contract and compact enable instructions (a selected-directory symlink for Claude Code). It does not concatenate OTel rules.
 
-Install an always-applied rule for TypeScript, JavaScript, and Python files:
+The root profile installs an always-applied rule for TypeScript, JavaScript, and Python. The Powertools profile applies across file types so Java, .NET and other language projects also load the shared contract:
 
 ```bash
 scripts/install.sh --agent=cursor --project=/path/to/project

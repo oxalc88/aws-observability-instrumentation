@@ -19,14 +19,14 @@ Reject narrative INFO such as starting function, calling repository, processing 
 
 Use fixed `event.name`, message, operation, stage, and failure category. Load [diagnostic-sufficiency](diagnostic-sufficiency.md) for the required fields for this category. Do not require every category's fields on every record. Keep safe code-location constants and deployment version where useful; never derive a log reason from arbitrary exception text.
 
-Do not pass `Error` objects to Logger: default error serialization can include message/stack. Select a closed reason/code and safe location instead. Do not log raw bodies, events, responses, headers, credentials, tokens, unrestricted object spreads, or schema validators' full errors. `received_fields` must contain approved schema field names only, with capped length; represent unknown field names by a count. Even field names can contain secrets or user content.
+Do not pass raw exception objects or enable exception serialization in Logger: it can include messages/stacks. Select a closed reason/code and safe location instead. Do not log raw bodies, events, responses, headers, credentials, tokens, unrestricted object spreads, or schema validators' full errors. `received_fields` must contain approved schema field names only, with capped length; represent unknown field names by a count. Even field names can contain secrets or user content.
 
 ## Lambda lifecycle and delivery
 
-Initialize Logger outside the handler. Use `injectLambdaContext(logger, { logEvent: false, resetKeys: true })` or manual context plus reset. Keep `POWERTOOLS_LOGGER_LOG_EVENT=false`; an environment override must not enable raw invocation logging. Do not put invocation/record correlation in persistent keys. Avoid shared per-record mutation when processing batches concurrently: pass record fields directly on each log.
+Initialize Logger outside the handler. Use the selected SDK’s safe context injection/reset or explicit per-call fields. Disable invocation-event logging and inspect deployment overrides; no SDK/environment option may enable raw payload logging. Do not put invocation/record correlation in persistent keys. Avoid shared per-record mutation when processing batches concurrently: pass record fields directly on each log.
 
 Logger JSON stdout goes to CloudWatch through Lambda. Do not also export the same record through an OTel bridge. Align Lambda Advanced Logging Controls and Logger levels so required ERROR/security events survive both filters; required WARN/INFO events need those levels too. Powertools' sample rate enables DEBUG verbosity for some invocations; it does not provide deterministic workflow log retention. Do not claim that it does.
 
 One boundary logs one terminal outcome. Helpers do not log-and-rethrow. Platform error records can coexist; do not add a second application failure log. If an SDK log call fails, preserve the business result and check sustained loss through deployment monitoring.
 
-API source: [Powertools Logger](https://docs.aws.amazon.com/powertools/typescript/latest/features/logger/).
+Read the selected SDK’s [language reference](language-adaptation.md) for safe Logger context, exception capture, fields and official sources.

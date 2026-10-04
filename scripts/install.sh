@@ -35,7 +35,7 @@ Agents:
 
 Skills:
   cloudwatch-instrumentation  existing OTel contract (default)
-  lambda-powertools          Lambda/TypeScript Logger, EMF Metrics, explicit tracing selection
+  lambda-powertools          Language-neutral Lambda Logger, EMF Metrics, Tracer coverage
 
 Options:
   --skill=<name>         select exactly one contract; no combined profile
@@ -151,14 +151,15 @@ skill_enable_block() {
 <!-- BEGIN lambda-powertools -->
 ## Lambda Powertools instrumentation
 
-For AWS Lambda TypeScript/Node.js telemetry, use only the \`lambda-powertools\`
+For AWS Lambda telemetry in any language, use only the \`lambda-powertools\`
 contract in this scope. Apply required surface coverage even without user
 preferences. Prove existing equivalence, fill gaps, or record non-applicability
 and exceptions. Do not load the root CloudWatch/OTel skill for this workload.
 
 1. Read \`$SKILL_ROOT/SKILL.md\`.
 2. Load only the relevant references linked there under \`$SKILL_ROOT/references/\`.
-3. Adapt the selected example from \`$SKILL_ROOT/examples/typescript/src/\`.
+3. Detect the handler language; read language-adaptation.md under references.
+   Use the matching TypeScript/Python examples or verify another SDK port.
 4. Apply the review rubric and enforcement guidance before completing the change.
 
 Use Powertools directly: EMF Metrics, diagnostic Logger, X-Ray Tracer.
@@ -256,8 +257,8 @@ install_cursor() {
     local header
     if [[ "$SKILL" == "lambda-powertools" ]]; then
         header='---
-description: Minimum useful AWS Lambda Powertools telemetry
-globs: "**/*.{ts,js,mjs,cjs}"
+description: Required language-neutral AWS Lambda Powertools coverage
+globs: "**/*"
 alwaysApply: true
 ---
 '

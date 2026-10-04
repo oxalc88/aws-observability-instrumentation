@@ -1,6 +1,6 @@
 # Charter
 
-Govern required operational coverage for AWS Lambda, TypeScript/Node.js, CloudWatch, and AWS Lambda Powertools. Metric = aggregate behavior; log = explain a material execution outcome; trace = reconstruct dependency/distributed path and timing. Different questions require different signals; not every helper needs all three.
+Govern required operational coverage for AWS Lambda in any language, CloudWatch, and AWS Lambda Powertools. Metric = aggregate behavior; log = explain a material execution outcome; trace = reconstruct dependency/distributed path and timing. Different questions require different signals; not every helper needs all three.
 
 ## Invariants
 
@@ -13,7 +13,8 @@ Govern required operational coverage for AWS Lambda, TypeScript/Node.js, CloudWa
 - Aggregate loops, budget series and EMF volume, keep exact totals unsampled, and preserve latency sample meaning. Cost controls must not silently remove required coverage.
 - Use Powertools directly. Initialize utilities outside handlers and reset invocation state. Do not build another logger or a generic observability runtime.
 - Keep telemetry failures from changing business outcomes; monitor sustained loss. Required best-effort telemetry does not promise complete delivery through hard timeouts.
-- Keep this skill independent of the root OTel contract and Python/non-Lambda examples.
+- Keep the core contract language neutral. Detect the handler language and adapt its SDK APIs; TypeScript/Python examples are validated mappings, not language limits.
+- Keep this skill independent of the root OTel contract and its language implementations.
 
 ## Sentry preservation and AWS adaptation
 
@@ -23,4 +24,4 @@ Diagnostic log contracts and general dependency/distributed tracing are extensio
 
 ## Scope
 
-No E2E framework, user-story automation, test generation, ECS/Fargate, EKS, generic OTel architecture, Python parity, product analytics, or unrelated features. Security evidence does not replace a separately governed durable audit trail.
+No E2E framework, user-story automation, test generation, ECS/Fargate, EKS, generic OTel architecture, product analytics, or unrelated features. Security evidence does not replace a separately governed durable audit trail.

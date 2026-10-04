@@ -56,6 +56,10 @@ class InstallerTests(unittest.TestCase):
                         self.assertIn("required surface coverage", before)
                         self.assertIn("existing equivalence", before)
                         self.assertIn("No silent coverage gaps", before)
+                        self.assertIn("any language", before)
+                        self.assertIn("language-adaptation.md", before)
+                        if agent == "cursor":
+                            self.assertIn('globs: "**/*"', before)
                         self.assertEqual(before.count("<!-- BEGIN lambda-powertools -->"), 1)
                         self.assertLess(len(before), 1500)
 

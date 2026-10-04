@@ -5,7 +5,7 @@ Two independent coding-agent skills for Amazon CloudWatch. Choose the instrument
 | Choose | When | Contract |
 | --- | --- | --- |
 | CloudWatch/OpenTelemetry (`cloudwatch-instrumentation`, default) | Native OTLP/PromQL metrics, OTel portability, multiple AWS runtimes, or the existing TypeScript/Python governed layer | [Root SKILL.md](SKILL.md) |
-| Lambda Powertools (`lambda-powertools`) | AWS Lambda TypeScript/Node.js with Powertools Logger, classic EMF Metrics, and X-Ray-backed Tracer with prescribed surface coverage | [Powertools SKILL.md](skills/lambda-powertools/SKILL.md) |
+| Lambda Powertools (`lambda-powertools`) | AWS Lambda across languages with Powertools Logger, classic EMF Metrics, and X-Ray-backed Tracer with prescribed surface coverage | [Powertools SKILL.md](skills/lambda-powertools/SKILL.md) |
 
 For Powertools, start with operational questions and apply prescribed coverage at applicable surfaces, even without user preferences. Metrics cover aggregate behavior, logs explain material outcomes, and traces reconstruct meaningful dependency/distributed paths. Reuse existing telemetry only with proven equivalent semantics; otherwise fill gaps or record non-applicability/explicit exceptions. No Logger → Metrics → Tracer implementation order. Read the [architecture analysis](docs/lambda-powertools-architecture.md) for Sentry preservation and AWS adaptations.
 
@@ -93,15 +93,15 @@ The agent will read `SKILL.md`, select the matching runtime and signal paths, us
 
 ## Lambda Powertools skill
 
-The independent skill lives in [`skills/lambda-powertools/`](skills/lambda-powertools/SKILL.md). It governs five metric purposes, material logs with category-specific diagnostic contracts, useful dependency/workflow tracing, and CloudWatch noise/cost. References load on demand. It uses Powertools directly and does not depend on the root OTel logger, metrics registry, collector, or gate.
+The independent skill lives in [`skills/lambda-powertools/`](skills/lambda-powertools/SKILL.md). It governs five metric purposes, material logs with category-specific diagnostic contracts, useful dependency/workflow tracing, and CloudWatch noise/cost. The core contract is language neutral. Agents detect the handler language, then load SDK-specific guidance. TypeScript/JavaScript and Python examples are tested mappings, not a language allowlist; Java, .NET and other ports preserve the same requirements while verifying available SDK APIs. References load on demand. It uses Powertools directly and does not depend on the root OTel logger, metrics registry, collector, or gate.
 
 The [surface baseline](skills/lambda-powertools/references/lambda-surfaces.md) preserves Sentry's required request/dependency/stage/queue/retry/fallback measurements. The [coverage record](skills/lambda-powertools/references/signal-selection.md) uses managed, custom, not_applicable, or exception. Unknown requires assessment; an exception remains a gap with mitigation, owner, and review date. Managed Lambda metrics normally cover invocation semantics, but not handled request rejections or caller-specific SDK durations.
 
-| Example | Coverage implemented | Operational questions |
+| Example (TypeScript / Python) | Coverage implemented | Operational questions |
 | --- | --- | --- |
-| [Validation handler](skills/lambda-powertools/examples/typescript/src/validation-handler.ts) | Request count/failure/duration + safe rejection diagnostics | What is rejection rate and request latency; which rule failed? |
-| [Batch fallback](skills/lambda-powertools/examples/typescript/src/batch-metrics.ts) | Stage duration/failures, aggregated record outcomes/fallbacks + terminal diagnostics | How does the batch perform; is fallback use increasing; where did work fail? |
-| [Dependency handler](skills/lambda-powertools/examples/typescript/src/dependency-handler.ts) | Caller count/failure/throttle/duration + meaningful trace + terminal diagnostics | How often does the call fail/throttle; what is its latency; where did this execution spend time? |
+| [TypeScript validation](skills/lambda-powertools/examples/typescript/src/validation-handler.ts) / [Python validation](skills/lambda-powertools/examples/python/powertools_examples/validation_handler.py) | Request count/failure/duration + safe rejection diagnostics | What is rejection rate and request latency; which rule failed? |
+| [TypeScript batch](skills/lambda-powertools/examples/typescript/src/batch-metrics.ts) / [Python batch](skills/lambda-powertools/examples/python/powertools_examples/batch_metrics.py) | Stage duration/failures, aggregated record outcomes/fallbacks + terminal diagnostics | How does the batch perform; is fallback use increasing; where did work fail? |
+| [TypeScript dependency](skills/lambda-powertools/examples/typescript/src/dependency-handler.ts) / [Python dependency](skills/lambda-powertools/examples/python/powertools_examples/dependency_handler.py) | Caller count/failure/throttle/duration + meaningful trace + terminal diagnostics | How often does the call fail/throttle; what is its latency; where did this execution spend time? |
 
 [Canonical contracts](skills/lambda-powertools/references/example-contracts.md) define names, units, purpose, bounded dimensions, owners, ratios, publication budgets and limitations. Local validation/batch examples explicitly mark tracing non-applicable; a real distributed consumer must assess transport continuity and queue/ack coverage. Useful dependency/distributed tracing is prescribed without waiting for user preferences.
 
@@ -117,9 +117,18 @@ npm run check
 npm test
 ```
 
-Use Node.js 22 or newer for these examples. Review [diagnostic sufficiency](skills/lambda-powertools/references/diagnostic-sufficiency.md), [cost/noise](skills/lambda-powertools/references/cost-and-noise.md), and [review/enforcement](skills/lambda-powertools/references/enforcement.md) when applying them. Local checks do not prove deployed EMF extraction or distributed trace continuity.
+For Python examples (Python 3.12+), use a separate environment:
 
-E2E frameworks, user-story automation, test generation, other runtimes, and Python parity are out of scope for this skill.
+```bash
+cd skills/lambda-powertools/examples/python
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-lock.txt
+.venv/bin/python -m pytest -q
+```
+
+Use Node.js 22 or newer for TypeScript examples. Read [language adaptation](skills/lambda-powertools/references/language-adaptation.md), [TypeScript SDK guidance](skills/lambda-powertools/references/languages/typescript.md), or [Python SDK guidance](skills/lambda-powertools/references/languages/python.md). Review [diagnostic sufficiency](skills/lambda-powertools/references/diagnostic-sufficiency.md), [cost/noise](skills/lambda-powertools/references/cost-and-noise.md), and [review/enforcement](skills/lambda-powertools/references/enforcement.md) when applying them. Local checks do not prove deployed EMF extraction or distributed trace continuity.
+
+E2E frameworks, user-story automation, test generation and non-Lambda platforms are out of scope. Policy reuse across languages does not claim tested implementation parity for SDKs without examples.
 
 ## CloudWatch/OpenTelemetry skill
 

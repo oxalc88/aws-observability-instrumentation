@@ -10,13 +10,13 @@ Inspected baseline:
 - `tortastudios/sentry-instrumentation` main: `2beb60282ec5acd7060b4efa60a29d1774784c85`.
 - Root `SKILL.md`, `AGENTS.md`, governance references, TypeScript Lambda/log/metric implementations, all adapters, installer, and validation workflow.
 - Sentry `SKILL.md` and charter, metric classes, signal model, boundaries, surface patterns, cost, enforcement, and review rubric.
-- Powertools Logger/Metrics/Tracer `2.35.0` source/types and current official documentation. The examples' lockfile records resolved SDK/tool versions.
+- Powertools TypeScript Logger/Metrics/Tracer `2.35.0` source/types and Python `3.35.0` source/APIs and current official documentation. The examples' lockfile records resolved SDK/tool versions.
 
 ## What exists and what changes
 
 | Area | Existing root contract/implementation | New Lambda contract |
 | --- | --- | --- |
-| Scope | Multiple AWS runtimes, TypeScript plus Python parity | Lambda TypeScript/Node.js only |
+| Scope | Multiple AWS runtimes, TypeScript plus Python parity | Language-neutral Lambda policy; tested TypeScript/JavaScript and Python examples |
 | Metrics | `MetricDef` + shared OTel emitter; native OTLP/PromQL preferred | Required surface measurements and five purposes retained; equivalent existing coverage or direct Powertools EMF gaps |
 | Logs | `LogEventDef` + custom governed structured logger; metric linkage and mandatory sampling metadata | Direct Powertools Logger; independent events with failure-category diagnostics |
 | Traces | OTel required; X-Ray SDK prohibited by rules and CI | Explicit tracing enable/disable decision; Powertools Tracer uses the X-Ray SDK |
@@ -53,7 +53,15 @@ No Sentry APIs, product-specific spans, or Sentry logging integration are copied
 
 Literal copying of every Sentry custom metric gives uniform emissions but duplicates managed invocation/queue signals and adds CloudWatch series/EMF volume. Per-feature opt-in lowers immediate volume but loses default coverage when the user does not specify requirements. Required equivalent coverage preserves the prescription with less duplication, at the cost of an explicit equivalence/exception review.
 
-Keep definitions local to existing project boundaries, with stable identities, versioned migration, bounded taxonomy and volume budgets. The canonical TypeScript examples use a tiny synchronous publication adapter for cleanup/failure isolation, not a generic registry/logger framework. Request and dependency durations preserve individual samples; batch duration remains a batch sample. Buffer aggregation cuts log records, not series count. No rate cap or sampling may silently discard required exact outcome/resource totals.
+Keep definitions local to existing project boundaries, with stable identities, versioned migration, bounded taxonomy and volume budgets. The canonical TypeScript and Python examples use a tiny synchronous publication adapter for cleanup/failure isolation, not a generic registry/logger framework. Request and dependency durations preserve individual samples; batch duration remains a batch sample. Buffer aggregation cuts log records, not series count. No rate cap or sampling may silently discard required exact outcome/resource totals.
+
+## Language-neutral policy and SDK mappings
+
+The core skill, metric/log/trace contracts and coverage requirements apply across languages. Detect the actual handler language from entry point, deployment and manifests before loading SDK guidance. TypeScript/JavaScript and Python supply representative tested mappings of the same metric identities, diagnostic fields and boundary semantics; they do not define a language allowlist. Java/.NET and other ports verify official SDK/runtime support and lifecycle behavior. Unavailable SDK utilities are explicit implementation gaps, not invented APIs or silent switches to root OTel.
+
+Move API names, trace enable flags, capture defaults and cleanup details into language-specific references. Python Metrics shares state by default; its examples use EphemeralMetrics for independent namespaces. Python tracing uses POWERTOOLS_TRACE_DISABLED, unlike the TypeScript POWERTOOLS_TRACE_ENABLED setting. SDK v3 attempts includes the first call; botocore RetryAttempts excludes it. Preserve the shared attempt meaning while adapting these APIs. Python safe error policy also handles chained runtime exceptions; SDK capture is reviewed independently in both languages.
+
+Use separate example environments and CI jobs so Powertools Python dependencies and X-Ray never enter the existing root OTel gate. Cursor's Powertools instruction rule covers all file types, while the root profile's behavior stays unchanged.
 
 ## Separate loading and installation
 
@@ -73,7 +81,7 @@ Local checks do not prove EMF extraction, IAM, Lambda active tracing, trace samp
 
 Powertools' full-error capture flag does not govern independent SDK instrumentation. The tracing example uses manual meaningful handler/dependency subsegments with independent best-effort cleanup, disables automatic HTTP/response/error capture, and avoids duplicate SDK capture. Consumers that choose SDK capture must review its data separately. The example's fixed application error policy avoids raw runtime error text; consumer business/retry semantics remain the consumer's responsibility.
 
-No E2E framework, user-story automation, test-generation system, non-Lambda runtime, Python parity, or application feature is introduced.
+No E2E framework, user-story automation, test-generation system, non-Lambda platform, or application feature is introduced.
 
 ## Sources
 
@@ -83,3 +91,5 @@ No E2E framework, user-story automation, test-generation system, non-Lambda runt
 - [Powertools Tracer](https://docs.aws.amazon.com/powertools/typescript/latest/features/tracer/)
 - [CloudWatch EMF](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Embedded_Metric_Format.html)
 - [SQS trace propagation](https://docs.aws.amazon.com/xray/latest/devguide/xray-services-sqs.html)
+
+Python sources: [Metrics](https://docs.aws.amazon.com/powertools/python/latest/core/metrics/), [Logger](https://docs.aws.amazon.com/powertools/python/latest/core/logger/), [Tracer](https://docs.aws.amazon.com/powertools/python/latest/core/tracer/).

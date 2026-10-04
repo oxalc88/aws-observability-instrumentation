@@ -1,0 +1,16 @@
+aws-xray-sdk==2.15.0
+aws_lambda_powertools==3.35.0
+boto3==1.43.108
+botocore==1.43.108
+iniconfig==2.3.0
+jmespath==1.1.0
+packaging==26.3
+pluggy==1.6.0
+Pygments==2.21.0
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+s3transfer==0.19.2
+six==1.17.0
+typing_extensions==4.16.0
+urllib3==2.8.0
+wrapt==2.5.0

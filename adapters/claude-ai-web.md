@@ -14,4 +14,4 @@ Using the cloudwatch-instrumentation skill, explain the native OTLP path for a
 Node.js service on Fargate and define one bounded latency metric.
 ```
 
-For Lambda Powertools, archive only `skills/lambda-powertools/` with its `SKILL.md`, references, agents metadata, and TypeScript examples. Exclude `node_modules/` and compiled output. Upload it as a separate skill and select one contract per workload; do not upload a merged OTel/Powertools skill.
+For Lambda Powertools, archive only `skills/lambda-powertools/` with its `SKILL.md`, references, agents metadata, and TypeScript/Python examples. Exclude `node_modules/`, `.venv/`, caches, and compiled output. Upload it as a separate skill and select one contract per workload; do not upload a merged OTel/Powertools skill.

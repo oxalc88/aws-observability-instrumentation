@@ -6,7 +6,7 @@ This repository contains two independent agent skills. The root `cloudwatch-inst
 
 This is not an application. It is installed into consumer projects so an AI agent working in those projects can read its rules. TypeScript is the Node.js implementation, and Python provides the same core metric, logging, tracing, Lambda lifecycle, SQS, and Kinesis contracts with idiomatic APIs.
 
-The separate `skills/lambda-powertools/` contract covers Lambda TypeScript with Powertools Logger, EMF Metrics, and explicitly selected X-Ray-backed Tracer. Its rules are scoped to that subtree and override the OTel-only runtime rules below there. Do not import root OTel registries, logger adapters, Python parity, or deployment configurations into it. Instrumentation starts with a question and prescribed coverage at applicable surfaces. Prove equivalent existing coverage or implement missing metrics, safe material-outcome diagnostics, and meaningful dependency/distributed tracing. Record non-applicability and explicit exceptions; user uncertainty does not remove the baseline.
+The separate `skills/lambda-powertools/` contract covers Lambda in any language with Powertools Logger, EMF Metrics, and explicitly selected X-Ray-backed Tracer. Its rules are scoped to that subtree and override the OTel-only runtime rules below there. Do not import root OTel registries, logger adapters, or deployment configurations into it. Instrumentation starts with a question and prescribed coverage at applicable surfaces. Prove equivalent existing coverage or implement missing metrics, safe material-outcome diagnostics, and meaningful dependency/distributed tracing. Record non-applicability and explicit exceptions; user uncertainty does not remove the baseline.
 
 ## Editing this repo
 
@@ -17,8 +17,8 @@ The separate `skills/lambda-powertools/` contract covers Lambda TypeScript with 
 - Distinguish native CloudWatch OTLP/PromQL metrics from classic CloudWatch/EMF metrics.
 - For the root skill, cover ECS/Fargate and Lambda behavior when changing runtime guidance. Also consider EKS, EC2, App Runner, local development, and on-premises collection.
 - Prefer official AWS and OpenTelemetry documentation for compatibility claims. Mark preview behavior and time-sensitive limits.
-- Update matching references, applicable language examples, checks, and adapters when a public rule changes. Powertools is TypeScript/Lambda only; no Python or non-Lambda parity is required.
-- Run the root TypeScript type check/tests and Python gate/tests before committing implementation changes. For Powertools changes, also run `npm run check` and `npm test` under `skills/lambda-powertools/examples/typescript`, plus `python3 scripts/test_install.py` for installer changes.
+- Update matching references, applicable language examples, checks, and adapters when a public rule changes. Powertools core policy is language neutral and Lambda only. Keep TypeScript and Python examples aligned in semantic coverage; verify idiomatic SDK behavior for other language ports.
+- Run the root TypeScript type check/tests and Python gate/tests before committing implementation changes. For Powertools changes, also run `npm run check` and `npm test` under `skills/lambda-powertools/examples/typescript`, the separate Powertools Python checks under `skills/lambda-powertools/examples/python` using its pinned dependencies, plus `python3 scripts/test_install.py` for installer changes.
 - Keep the root policy gate scoped to root examples/config. It forbids X-Ray SDKs, so it must not scan the separate Powertools subtree.
 - Installer defaults remain `cloudwatch-instrumentation`. Use `--skill=lambda-powertools` explicitly and reject conflicting active profile instructions before writing. Never concatenate the contracts.
 
