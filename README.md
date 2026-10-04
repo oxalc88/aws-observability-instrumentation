@@ -5,9 +5,9 @@ Two independent coding-agent skills for Amazon CloudWatch. Choose the instrument
 | Choose | When | Contract |
 | --- | --- | --- |
 | CloudWatch/OpenTelemetry (`cloudwatch-instrumentation`, default) | Native OTLP/PromQL metrics, OTel portability, multiple AWS runtimes, or the existing TypeScript/Python governed layer | [Root SKILL.md](SKILL.md) |
-| Lambda Powertools (`lambda-powertools`) | AWS Lambda TypeScript/Node.js with Powertools Logger, optional classic EMF metrics, and optional X-Ray-backed Tracer | [Powertools SKILL.md](skills/lambda-powertools/SKILL.md) |
+| Lambda Powertools (`lambda-powertools`) | AWS Lambda TypeScript/Node.js with Powertools Logger, optional classic EMF metrics, and explicitly selected X-Ray-backed Tracer | [Powertools SKILL.md](skills/lambda-powertools/SKILL.md) |
 
-For Powertools, start with an operational question. Metrics are primary for aggregate monitoring, trends, and alerts: reuse managed AWS metrics and add custom EMF metrics for gaps. Logs explain individual outcomes; traces reconstruct useful execution paths and dependency timing. Select each signal independently. A Lambda does not automatically need Logger + Metrics + Tracer. Read the [architecture analysis](docs/lambda-powertools-architecture.md) for evidence, retained Sentry principles, and the contract differences.
+For Powertools, start with an operational question. Metrics are primary for aggregate monitoring, trends, and alerts: reuse managed AWS metrics and add custom EMF metrics for gaps. Logs explain individual outcomes; traces reconstruct useful execution paths and dependency timing. Evaluate all signals together, without a Logger → Metrics → Tracer implementation order. Record tracing as enabled or disabled with a reason; enable for required dependency timing or distributed causality. A Lambda does not automatically need Logger + Metrics + Tracer. Read the [architecture analysis](docs/lambda-powertools-architecture.md) for evidence, retained Sentry principles, and the contract differences.
 
 This project is based on [Sentry Instrumentation](https://github.com/tortastudios/sentry-instrumentation), a skill that standardizes how application observability is instrumented. Credit for the contract-first approach and guidance on what to measure goes to the team at [Torta Studios](https://tortastudios.com/).
 

@@ -3,6 +3,8 @@ import { Metrics, MetricUnit } from "@aws-lambda-powertools/metrics";
 // Question: Is fallback usage increasing among completed record attempts?
 // Purpose: correctness. Ratio = Sum(FallbackRecords) / Sum(ProcessedRecords).
 // Lambda Invocations/Errors do not provide this denominator or fallback count.
+// Tracing: disabled; this local batch has no dependency or distributed path.
+// A real distributed consumer must reassess propagation and tracing needs.
 // Expected harmless fallback needs no individual log or local-helper trace.
 // Owner: ingestion. One buffer at batch exit, service dimension only (1 value).
 // Cost: two series and one EMF record per nonempty completed batch; no metadata.

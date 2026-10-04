@@ -19,7 +19,7 @@ Inspected baseline:
 | Scope | Multiple AWS runtimes, TypeScript plus Python parity | Lambda TypeScript/Node.js only |
 | Metrics | `MetricDef` + shared OTel emitter; native OTLP/PromQL preferred | Five purposes retained; direct Powertools EMF publication when justified |
 | Logs | `LogEventDef` + custom governed structured logger; metric linkage and mandatory sampling metadata | Direct Powertools Logger; independent events with failure-category diagnostics |
-| Traces | OTel required; X-Ray SDK prohibited by rules and CI | Optional Powertools Tracer, which uses the X-Ray SDK |
+| Traces | OTel required; X-Ray SDK prohibited by rules and CI | Explicit tracing enable/disable decision; Powertools Tracer uses the X-Ray SDK |
 | Lambda example | Root handler defines invocation/failure metrics and completion/failure logs | Examples deliberately omit unnecessary signals |
 | Delivery | OTel providers/ADOT/collector topology; platform logs preferred | Lambda stdout for Logger and EMF; Lambda active tracing for Tracer |
 | Installation | Fixed root profile; Claude symlink, Codex enable block, other adapters concatenate root references | Explicit `--skill`; nested symlink or compact enable block; conflict rejection |
@@ -27,7 +27,7 @@ Inspected baseline:
 
 The root skill already warns against mechanically creating the metric triad. Its current Lambda example nevertheless creates custom invocation/failure metrics and completion logging without a consumer-specific decision. The Powertools skill makes the selection record precede API choice; this task does not refactor the root examples.
 
-Metrics remain the primary aggregate monitoring/alert signal. Independent selection means custom Powertools metrics are unnecessary when managed coverage suffices, not that aggregate requirements may be replaced with logs or sampled traces. The validation example intentionally covers individual diagnosis; rejection-rate monitoring requires compatible accepted/rejected outcome counts. Tracer is useful even within a single Lambda when timed DynamoDB/S3 calls locate execution latency. Selection, deployment activation, and per-invocation sampling are separate decisions.
+Metrics remain the primary aggregate monitoring/alert signal. Independent selection means custom Powertools metrics are unnecessary when managed coverage suffices, not that aggregate requirements may be replaced with logs or sampled traces. The validation example intentionally covers individual diagnosis; rejection-rate monitoring requires compatible accepted/rejected outcome counts. Tracer is useful even within a single Lambda when timed DynamoDB/S3 calls locate execution latency. Selection, deployment activation, and per-invocation sampling are separate decisions. Tracing selection is mandatory for every workload: enable when dependency timing or distributed causality is required, or document an opt-out reason and existing owner. Reference/example order does not prescribe Logger → Metrics → Tracer implementation.
 
 Root logging is governed and safe but its event schema alone does not guarantee a specific failed rule or dependency diagnosis. The new skill extends diagnostic sufficiency rather than inheriting mandatory metric linkage or inventing another logger.
 

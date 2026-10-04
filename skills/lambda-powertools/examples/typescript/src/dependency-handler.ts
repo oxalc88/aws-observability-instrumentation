@@ -5,6 +5,7 @@ import { captureLambdaHandler } from "@aws-lambda-powertools/tracer/middleware";
 import middy from "@middy/core";
 import type { Context } from "aws-lambda";
 
+// Tracing: enabled; this handler owns dependency timing via Powertools.
 // Trace question: How much time did the lookup spend in DynamoDB?
 // Log question: Which dependency operation failed, at which stage/invocation?
 // No custom metric: managed Lambda/DynamoDB metrics cover the current aggregate need.

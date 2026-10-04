@@ -1,6 +1,16 @@
 # Tracing: useful path and timing
 
-Tracing is optional. Enable Powertools Tracer when operators need dependency timing, distributed causality, a path across AWS services/Lambdas, or workflow investigation that logs/metrics cannot answer. A simple local validation/transform Lambda may need none.
+Tracing selection is mandatory; trace emission depends on that explicit decision. Evaluate tracing alongside metrics and logs, not after them. Enable tracing when operators require meaningful dependency timing, distributed causality, a path across AWS services/Lambdas, or workflow investigation. A simple local validation/transform Lambda may explicitly disable it with a reason.
+
+## Required enable/disable decision
+
+Record `tracing: enabled|disabled`, reason/question, instrumentation owner, dependency/workflow boundaries, and propagation requirements before implementation. When enabled, also record deployment activation and sampling policy. No decision is a review failure.
+
+- **Enable:** required timing for DynamoDB/S3/external calls, or required causality across multiple Lambdas, AWS services, queues, or workflow stages. Identify producer → transport → consumer continuity, not just individual handler instrumentation.
+- **Disable:** no meaningful dependency/path question, or adequate existing tracing owns these boundaries. Name that existing owner when applicable; do not create duplicate Powertools subsegments. A local-only validation example can disable tracing because it has no dependency or distributed path.
+- **Blocked:** when required continuity is unsupported or unavailable, report the gap and a mitigation/owner. Correlation logs help investigation but do not fulfill the trace requirement. Do not silently mark the requirement complete or disabled merely to reduce cost.
+
+This is a skill decision contract, not a new configuration framework. Use a short comment or the project’s existing instrumentation document. `POWERTOOLS_TRACE_ENABLED` is a runtime switch; the deployment and code must agree with the recorded decision.
 
 ## When tracing is activated
 

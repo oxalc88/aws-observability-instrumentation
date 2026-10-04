@@ -6,7 +6,7 @@ This repository contains two independent agent skills. The root `cloudwatch-inst
 
 This is not an application. It is installed into consumer projects so an AI agent working in those projects can read its rules. TypeScript is the Node.js implementation, and Python provides the same core metric, logging, tracing, Lambda lifecycle, SQS, and Kinesis contracts with idiomatic APIs.
 
-The separate `skills/lambda-powertools/` contract covers Lambda TypeScript with Powertools Logger, EMF Metrics, and optional X-Ray-backed Tracer. Its rules are scoped to that subtree and override the OTel-only runtime rules below there. Do not import root OTel registries, logger adapters, Python parity, or deployment configurations into it. Instrumentation starts with a question; signals are independent and optional.
+The separate `skills/lambda-powertools/` contract covers Lambda TypeScript with Powertools Logger, EMF Metrics, and explicitly selected X-Ray-backed Tracer. Its rules are scoped to that subtree and override the OTel-only runtime rules below there. Do not import root OTel registries, logger adapters, Python parity, or deployment configurations into it. Instrumentation starts with a question; signals are independent. Tracing requires an explicit enable/disable decision and reason, with enablement required for stated dependency timing or distributed causality needs.
 
 ## Editing this repo
 

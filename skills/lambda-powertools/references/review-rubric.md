@@ -26,6 +26,8 @@ Block telemetry that lacks a question, ownership, sufficient diagnostics, safe d
 
 ## Tracing
 
+- Is tracing explicitly enabled or disabled with a reason and owner? Missing selection blocks review; document activation/sampling when enabled.
+- Are dependency timing and distributed execution requirements assessed alongside metrics/logs? An opt-out must not hide an unmet requirement; report unsupported continuity as a gap.
 - Is there a path/timing/causality question that logs/metrics cannot answer?
 - Are trivial helper subsegments and duplicate SDK/manual capture absent?
 - Are response/error/HTTP capture defaults reviewed and sensitive metadata prevented?

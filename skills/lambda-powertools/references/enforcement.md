@@ -10,6 +10,7 @@ Use the project's existing lint/CI and focused instrumentation unit checks:
 - Assert failure-category records contain safe rule/path/dependency/location and correlation; test pathological input without exposing values.
 - Capture Logger stdout and EMF in memory/local sinks. Assert one application event/publication, bounded dimensions, aggregate values, and no secrets.
 - Exercise two warm invocations and failed SDK publication; verify no retained keys/metrics and unchanged application outcomes.
+- Require the explicit tracing enable/disable record and verify code/deployment agree with it. If causality is required, report unsupported continuity as a gap rather than treating correlation logs as trace coverage.
 - Inspect middleware order and effective capture flags. Assert no automatic full-error/response capture under the selected trace contract.
 - Verify supported propagation, sampling, and managed telemetry coverage in a deliberate non-production deployment check when rolling out instrumentation. Do not create a testing framework or automate user stories.
 

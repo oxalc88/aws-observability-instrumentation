@@ -7,7 +7,8 @@ Record one decision per operational question; a short code comment or existing i
 | Question | What must an operator know? |
 | Action and owner | Who responds, and what investigation/action follows? |
 | Existing coverage | Which AWS metric, log, or trace already answers it? |
-| Signal or omission | Metric, log, trace, a justified combination, or none |
+| Signal or omission | Metric, log, trace, a justified combination, or none; evaluate all branches together |
+| Tracing decision | Required `enabled` or `disabled`, reason, owner, dependency/workflow boundaries, and propagation needs; enabled also declares activation and sampling |
 | Boundary and meaning | Where is work complete? Per attempt, record, batch, or workflow? |
 | Safe contract | Closed dimensions; category-specific log fields; safe trace metadata |
 | Cost | Expected series, EMF records, log bytes, subsegments, retention |

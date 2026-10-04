@@ -35,7 +35,7 @@ Agents:
 
 Skills:
   cloudwatch-instrumentation  existing OTel contract (default)
-  lambda-powertools          Lambda/TypeScript Logger, EMF Metrics, optional Tracer
+  lambda-powertools          Lambda/TypeScript Logger, EMF Metrics, explicit tracing selection
 
 Options:
   --skill=<name>         select exactly one contract; no combined profile
@@ -161,7 +161,9 @@ CloudWatch/OTel skill for this workload.
 3. Adapt the selected example from \`$SKILL_ROOT/examples/typescript/src/\`.
 4. Apply the review rubric and enforcement guidance before completing the change.
 
-Use Powertools directly. Metrics use EMF; Tracer is optional and uses X-Ray.
+Use Powertools directly. Metrics use EMF; Tracer uses X-Ray. Evaluate all signals
+together. Explicitly enable or disable tracing with a reason; enable when
+dependency timing or distributed causality is required. No silent omission.
 Do not dump payloads/errors or add all three signals mechanically.
 <!-- END lambda-powertools -->
 EOF

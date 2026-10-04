@@ -1,6 +1,6 @@
 ---
 name: lambda-powertools
-description: Choose and implement the minimum useful CloudWatch telemetry for AWS Lambda in TypeScript/Node.js with AWS Lambda Powertools Logger, Metrics (EMF), and optional Tracer. Use when reviewing Lambda observability, deciding what to measure/log/trace, diagnosing validation or dependency failures, controlling CloudWatch cost/noise, or adding Powertools instrumentation. Each signal is optional. Excludes generic OTel architecture, other runtimes, Python parity, E2E frameworks, and test generation.
+description: Choose and implement the minimum useful CloudWatch telemetry for AWS Lambda in TypeScript/Node.js with AWS Lambda Powertools Logger, Metrics (EMF), and explicitly selected Tracer. Use when reviewing Lambda observability, deciding what to measure/log/trace, diagnosing validation or dependency failures, controlling CloudWatch cost/noise, or adding Powertools instrumentation. Require a documented tracing enable/disable decision; enable for required dependency timing or distributed causality. Excludes generic OTel architecture, other runtimes, Python parity, E2E frameworks, and test generation.
 ---
 
 # Lambda Powertools
@@ -22,13 +22,13 @@ flowchart TD
 
 Metrics are the primary signal for aggregate monitoring, trends, and alerts. Check that each required aggregate question has managed AWS or justified custom metric coverage; diagnostic logs and sampled traces do not replace that coverage. Custom metrics remain optional when managed metrics suffice.
 
-Evaluate branches independently. A trace can be useful without a log. A log does not require a metric or trace. No new signal is a valid decision when managed AWS telemetry already answers the question.
+Evaluate all three branches together; their order here is not an implementation sequence. A trace can be useful without a log. Every workload must explicitly record tracing as `enabled` or `disabled` with a reason. Enable it when meaningful dependency timing or distributed causality is required; omission is not an opt-out. No new signal is valid when existing telemetry answers the question, with its owner recorded.
 
 1. Inspect existing telemetry, Lambda trigger, dependencies, retry/ack behavior, and Powertools versions. Reuse the existing signal owner.
-2. Write a short decision record: question, operational action/owner, existing coverage, selected signal or omission, emission boundary, safe fields/dimensions, and volume estimate. Read [signal-selection](references/signal-selection.md) if uncertain.
+2. Write a short decision record: question, operational action/owner, existing coverage, selected signal or omission, tracing enabled/disabled and reason, emission boundary, safe fields/dimensions, and volume estimate. Read [signal-selection](references/signal-selection.md) if uncertain.
 3. For a metric, select exactly one purpose: `outcome`, `latency`, `load`, `resource`, or `correctness`. Require aggregate meaning, bounded dimensions, and value greater than metric + EMF/log + cardinality + maintenance cost. Read [metrics](references/metrics.md) before using Metrics.
 4. For a log, choose a material outcome and its failure-category contract. Require operation, stage, class, specific safe rule/reason, location or dependency, and correlation where applicable. Read [logging](references/logging.md), [diagnostic sufficiency](references/diagnostic-sufficiency.md), and [failure taxonomy](references/failure-taxonomy.md) before adding a failure event.
-5. For a trace, name the path/timing question that logs or metrics cannot answer. Use meaningful dependency/workflow boundaries. Read [tracing](references/tracing.md) before enabling Tracer; verify capture defaults and transport support.
+5. Decide tracing explicitly for the workload, including SDK dependencies and distributed stages. Enable for required path/timing/causality; otherwise document why it is disabled. Read [tracing](references/tracing.md) for activation, sampling, capture safety, and transport support. Existing instrumentation may own tracing; do not add a duplicate Tracer.
 6. Put emissions at Lambda/request, workflow, dependency, retry, queue/batch, or fallback boundaries. Keep one owner per outcome; aggregate loops. Read [Lambda surfaces](references/lambda-surfaces.md).
 7. Use Powertools directly. Do not introduce a competing logger or import the root OTel definitions/emitter. Initialize selected utilities outside the handler; reset invocation state and use one metric publication owner.
 8. Review [cost and noise](references/cost-and-noise.md), then apply the [review rubric](references/review-rubric.md) and [enforcement guidance](references/enforcement.md). Report what was deliberately omitted and why.

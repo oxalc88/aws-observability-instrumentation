@@ -2,6 +2,7 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import type { APIGatewayProxyEventV2, Context } from "aws-lambda";
 
 // Question: Which safe rule rejected an enrichment request, and where?
+// Tracing: disabled; local validation has no dependency or distributed path.
 // AWS errors do not explain handled 400s. No aggregate question or dependency
 // path requires custom Metrics or Tracer in this diagnosis-only example.
 // If rejection rate needs monitoring, count all completed validation decisions
