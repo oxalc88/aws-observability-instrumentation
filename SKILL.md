@@ -5,6 +5,8 @@ description: Add governed OpenTelemetry metrics and traces plus secure structure
 
 # CloudWatch Instrumentation
 
+This is the root OTel contract. If the task explicitly selects AWS Lambda Powertools Metrics/Tracer, use the separate `lambda-powertools` skill installed from `skills/lambda-powertools/`; do not load or combine both contracts for that workload.
+
 Build a three-pillar observability system: governed native OTel metrics, OpenTelemetry traces, and secure structured application logs. Keep AWS authentication and OTLP routing in the CloudWatch Agent, ADOT, or an OpenTelemetry Collector whenever the runtime permits it. Platform log delivery for Lambda and Fargate is deliberately allowed and often preferred.
 
 ## Select each signal path first

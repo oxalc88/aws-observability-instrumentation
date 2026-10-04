@@ -25,6 +25,22 @@ jobs:
       - run: npm run check
       - run: npm test
 
+  lambda-powertools:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: skills/lambda-powertools/examples/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: skills/lambda-powertools/examples/typescript/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+
   policy-and-python:
     runs-on: ubuntu-latest
     steps:
@@ -38,6 +54,7 @@ jobs:
       - run: python -m pytest -q examples/python
       - run: python examples/python/ci_gate.py examples/typescript/src examples/python config
       - run: bash -n scripts/install.sh
+      - run: python3 scripts/test_install.py
       - name: Parse deployment configurations
         run: |
           python - <<'PY'

@@ -1,8 +1,13 @@
-# CloudWatch Instrumentation
+# AWS Observability Instrumentation
 
-A Node.js-first coding skill for three-pillar observability in Amazon CloudWatch: governed native OpenTelemetry metrics, OpenTelemetry traces, and secure structured application logs. It preserves the original repository's contract-first approach while replacing Sentry-specific APIs with standard OTel SDKs, AWS-supported collection, PromQL-aware metrics, and AWS/OWASP-aligned logging.
+Two independent coding-agent skills for Amazon CloudWatch. Choose the instrumentation architecture for the workload; each skill has its own contract and examples.
 
-The policy is language agnostic. TypeScript is the canonical Node.js implementation; Python maintains behavioral parity for the core metric, logging, tracing, Lambda lifecycle, SQS, and Kinesis contracts.
+| Choose | When | Contract |
+| --- | --- | --- |
+| CloudWatch/OpenTelemetry (`cloudwatch-instrumentation`, default) | Native OTLP/PromQL metrics, OTel portability, multiple AWS runtimes, or the existing TypeScript/Python governed layer | [Root SKILL.md](SKILL.md) |
+| Lambda Powertools (`lambda-powertools`) | AWS Lambda TypeScript/Node.js with Powertools Logger, classic EMF Metrics, and X-Ray-backed Tracer with prescribed surface coverage | [Powertools SKILL.md](skills/lambda-powertools/SKILL.md) |
+
+For Powertools, start with operational questions and apply prescribed coverage at applicable surfaces, even without user preferences. Metrics cover aggregate behavior, logs explain material outcomes, and traces reconstruct meaningful dependency/distributed paths. Reuse existing telemetry only with proven equivalent semantics; otherwise fill gaps or record non-applicability/explicit exceptions. No Logger → Metrics → Tracer implementation order. Read the [architecture analysis](docs/lambda-powertools-architecture.md) for Sentry preservation and AWS adaptations.
 
 This project is based on [Sentry Instrumentation](https://github.com/tortastudios/sentry-instrumentation), a skill that standardizes how application observability is instrumented. Credit for the contract-first approach and guidance on what to measure goes to the team at [Torta Studios](https://tortastudios.com/).
 
@@ -18,11 +23,19 @@ scripts/install.sh --agent=<agent> --project=/path/to/your/project
 
 `<agent>` is one of `claude-code`, `cursor`, `codex`, `aider`, `continue`, or `windsurf`. The installer is idempotent, so it can be run again after updating this clone. For Claude Code, omit `--project` to install for the current user under `~/.claude/skills/`.
 
+Select Lambda Powertools explicitly:
+
+```bash
+scripts/install.sh --skill=lambda-powertools --agent=codex --project=/path/to/your/project
+```
+
+Select the existing architecture explicitly with `--skill=cloudwatch-instrumentation`, or omit `--skill` to preserve the existing default. Selection works for all six scripted agents. Repeated `--skill` options are rejected. The installer refuses conflicting profile instructions in known project and ancestor discovery files and Claude skill locations before writing. Remove the previous managed block/rule/symlink before switching; it does not remove or migrate application instrumentation. For mixed-runtime monorepos, use separately scoped instruction roots and review any custom global rules.
+
 Keep this skill in a separate clone instead of nesting its Git repository inside the application repository.
 
 ### Pin a version
 
-Check out a release tag before running the installer to keep the project on a stable skill contract:
+Check out a release tag that contains the selected skill before running the installer. The historical `v0.1.0` example below contains the root OTel skill; use a release containing `skills/lambda-powertools/` for the new profile:
 
 ```bash
 git clone https://github.com/oxalc88/aws-observability-instrumentation.git
@@ -51,7 +64,7 @@ git ls-remote --tags https://github.com/oxalc88/aws-observability-instrumentatio
 
 Each guide explains what the installer writes, how the agent loads the skill, and how to verify the installation.
 
-### Try the skill
+### Try the CloudWatch/OpenTelemetry skill
 
 Paste any of these prompts into your agent:
 
@@ -78,7 +91,41 @@ service with the same signal contracts and idiomatic language APIs.
 
 The agent will read `SKILL.md`, select the matching runtime and signal paths, use the governed definitions and surface patterns, and produce code that passes the policy gate.
 
-## What it covers
+## Lambda Powertools skill
+
+The independent skill lives in [`skills/lambda-powertools/`](skills/lambda-powertools/SKILL.md). It governs five metric purposes, material logs with category-specific diagnostic contracts, useful dependency/workflow tracing, and CloudWatch noise/cost. References load on demand. It uses Powertools directly and does not depend on the root OTel logger, metrics registry, collector, or gate.
+
+The [surface baseline](skills/lambda-powertools/references/lambda-surfaces.md) preserves Sentry's required request/dependency/stage/queue/retry/fallback measurements. The [coverage record](skills/lambda-powertools/references/signal-selection.md) uses managed, custom, not_applicable, or exception. Unknown requires assessment; an exception remains a gap with mitigation, owner, and review date. Managed Lambda metrics normally cover invocation semantics, but not handled request rejections or caller-specific SDK durations.
+
+| Example | Coverage implemented | Operational questions |
+| --- | --- | --- |
+| [Validation handler](skills/lambda-powertools/examples/typescript/src/validation-handler.ts) | Request count/failure/duration + safe rejection diagnostics | What is rejection rate and request latency; which rule failed? |
+| [Batch fallback](skills/lambda-powertools/examples/typescript/src/batch-metrics.ts) | Stage duration/failures, aggregated record outcomes/fallbacks + terminal diagnostics | How does the batch perform; is fallback use increasing; where did work fail? |
+| [Dependency handler](skills/lambda-powertools/examples/typescript/src/dependency-handler.ts) | Caller count/failure/throttle/duration + meaningful trace + terminal diagnostics | How often does the call fail/throttle; what is its latency; where did this execution spend time? |
+
+[Canonical contracts](skills/lambda-powertools/references/example-contracts.md) define names, units, purpose, bounded dimensions, owners, ratios, publication budgets and limitations. Local validation/batch examples explicitly mark tracing non-applicable; a real distributed consumer must assess transport continuity and queue/ack coverage. Useful dependency/distributed tracing is prescribed without waiting for user preferences.
+
+Tracing is useful for a Lambda execution timeline with DynamoDB, S3, or other meaningful dependency calls. It requires Lambda active tracing, X-Ray permissions, and handler/dependency instrumentation; only sampled invocations are recorded. See [when tracing is activated](skills/lambda-powertools/references/tracing.md#when-tracing-is-activated). The installer does not enable tracing in AWS.
+
+The snippets demonstrate instrumentation boundaries; they are not a complete order application. Copy only the selected example and relevant contract. The batch counts attempts, not exactly-once business operations. The dependency example uses a manual meaningful subsegment to avoid unrestricted SDK capture, with automatic HTTP/response/error capture disabled; its fixed public error policy is illustrative, and consumer retry/error semantics must be retained.
+
+```bash
+python3 scripts/test_install.py
+cd skills/lambda-powertools/examples/typescript
+npm ci
+npm run check
+npm test
+```
+
+Use Node.js 22 or newer for these examples. Review [diagnostic sufficiency](skills/lambda-powertools/references/diagnostic-sufficiency.md), [cost/noise](skills/lambda-powertools/references/cost-and-noise.md), and [review/enforcement](skills/lambda-powertools/references/enforcement.md) when applying them. Local checks do not prove deployed EMF extraction or distributed trace continuity.
+
+E2E frameworks, user-story automation, test generation, other runtimes, and Python parity are out of scope for this skill.
+
+## CloudWatch/OpenTelemetry skill
+
+The sections below describe the existing root skill. Its language-agnostic policy has canonical TypeScript examples and Python parity. Its OTel metric and tracing rules are separate from Powertools.
+
+### What it covers
 
 - OpenTelemetry metric names, units, histogram boundaries, attributes, and lifecycle rules.
 - Low-cardinality metric contracts enforced at runtime and in CI.
@@ -117,13 +164,13 @@ The application has no AWS SDK metric calls and no static AWS credentials. Its i
 
 Lambda uses the same metric contracts but a different lifecycle: initialize at module scope, reuse providers across warm invocations, and perform a bounded `forceFlush()` before the runtime freezes. Lambda cannot run a normal sidecar, so use the current optimized ADOT layer or a verified collectorless ADOT SDK path, with exactly one owner initializing the OTel providers. AWS now marks the older Lambda layers with an embedded collector as not recommended for CloudWatch-only destinations. For logs, use governed JSON stdout and Lambda Advanced Logging Controls (`LogFormat: JSON`) by default; do not add an in-process OTLP log exporter for records Lambda already delivers.
 
-This project does not use the AWS X-Ray SDK or X-Ray daemon. AWS has placed those instrumentation components in maintenance mode and recommends migrating to OpenTelemetry. AWS still currently exposes its CloudWatch OTLP traces API at `https://xray.<region>.amazonaws.com/v1/traces` and requires the SigV4 service name `xray`; that endpoint naming is independent of the deprecated SDK/daemon.
+The root CloudWatch/OpenTelemetry skill does not use the AWS X-Ray SDK or X-Ray daemon. AWS has placed those instrumentation components in maintenance mode and recommends migrating to OpenTelemetry. AWS still currently exposes its CloudWatch OTLP traces API at `https://xray.<region>.amazonaws.com/v1/traces` and requires the SigV4 service name `xray`; that endpoint naming is independent of the deprecated SDK/daemon.
 
 OpenTelemetry can still participate in the AWS-managed flow from API Gateway through Lambda and asynchronous services. For Lambda active tracing, use OTel's `xray-lambda` propagator; for the worked SQS path, use the AWS-managed `AWSTraceHeader` system attribute or deliberately select W3C message attributes. Other queues, streams, topics, event buses, and workflow engines use the same OTel context plus stable `correlation_id` contract through a transport-specific carrier. See [`references/async-trace-propagation.md`](references/async-trace-propagation.md).
 
 ## CloudWatch paths
 
-This repository targets CloudWatch's native OpenTelemetry metric store when PromQL is required:
+The root CloudWatch/OpenTelemetry skill targets CloudWatch's native OpenTelemetry metric store when PromQL is required:
 
 ```text
 https://monitoring.<region>.amazonaws.com/v1/metrics
@@ -139,7 +186,7 @@ Every application record uses a declared `LogEventDef`, a stable message and lev
 
 Fargate defaults to JSON stdout through `awslogs`; Lambda defaults to JSON stdout through the Lambda service. An OTel logger bridge and the three-signal collector template are optional when the OTel log model or multi-destination routing is required. Pick one path per record to avoid duplicate ingestion.
 
-Powertools Logger is a supported optional Lambda adapter. Powertools Metrics uses EMF and Powertools Tracer uses the legacy X-Ray SDK, so those utilities do not replace this repository's native OTLP metrics and OTel trace paths. See [`references/structured-logging.md`](references/structured-logging.md).
+Within the root OTel contract, Powertools Logger is a supported optional Lambda adapter. Powertools Metrics uses EMF and Powertools Tracer uses the X-Ray SDK, so those utilities belong to the separate Lambda Powertools skill rather than replacing this contract's native OTLP metrics and OTel trace paths. See [`references/structured-logging.md`](references/structured-logging.md).
 
 An internal undefined-property failure produces a record shaped like this (pretty-printed here; the sink writes one line):
 
@@ -178,7 +225,7 @@ An internal undefined-property failure produces a record shaped like this (prett
 
 The raw exception message, stack, and source-code text are excluded from this operational record. Query by `metric.name` plus `failure.class`, group by `exception.type` and `code.*`, then pivot through `trace_id` to the matching OTel trace.
 
-## Repository map
+## Root CloudWatch skill map
 
 ```text
 cloudwatch-instrumentation/
@@ -330,7 +377,7 @@ PromQL exposes normalized metric identifiers, while OTel instrument names in cod
 
 ## Contract gate
 
-Run the same static policy over Node and Python sources:
+Run the root OTel static policy over its Node and Python sources. Keep this gate scoped to the paths below; it intentionally forbids X-Ray and does not apply to `skills/lambda-powertools/`:
 
 ```bash
 python examples/python/ci_gate.py examples/typescript/src examples/python config
