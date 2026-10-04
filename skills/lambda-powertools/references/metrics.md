@@ -1,6 +1,10 @@
 # Metrics: aggregate operational questions
 
-Metrics are optional. Reject a custom metric unless it answers a question across executions and supports a defined operational action.
+Metrics are the primary signal for aggregate monitoring, trends, and alerts. Required aggregate questions must have metric coverage: use managed AWS metrics first, then custom metrics for demonstrated gaps. Powertools Metrics is optional when existing metrics suffice; optional does not mean an operational monitoring requirement may be ignored. Reject a custom metric unless it answers a question across executions and supports a defined operational action.
+
+Logs diagnose individual outcomes; sampled traces explain individual paths and timings. Neither substitutes for reliable aggregate counts or rates. A successful Lambda invocation can still contain a handled validation rejection or partial batch failure, so Lambda `Errors` alone cannot measure those outcomes.
+
+For validation monitoring, define an outcome Count at the request boundary for **every completed validation decision**, with a closed `result=accepted|rejected` dimension. Query rejected Sum / total Sum over the same window and population. Keep request IDs and diagnostic rule/path details in the rejection log. Add this metric only when rejection volume/rate is an operational requirement and adequate existing coverage is absent; the Logger-only example covers diagnosis alone.
 
 | Purpose | Meaning | Powertools/CloudWatch representation |
 | --- | --- | --- |

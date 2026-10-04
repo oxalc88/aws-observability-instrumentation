@@ -20,6 +20,8 @@ flowchart TD
     P --> T["Trace"]
 ```
 
+Metrics are the primary signal for aggregate monitoring, trends, and alerts. Check that each required aggregate question has managed AWS or justified custom metric coverage; diagnostic logs and sampled traces do not replace that coverage. Custom metrics remain optional when managed metrics suffice.
+
 Evaluate branches independently. A trace can be useful without a log. A log does not require a metric or trace. No new signal is a valid decision when managed AWS telemetry already answers the question.
 
 1. Inspect existing telemetry, Lambda trigger, dependencies, retry/ack behavior, and Powertools versions. Reuse the existing signal owner.
@@ -53,6 +55,6 @@ Evaluate branches independently. A trace can be useful without a log. A log does
 | Handler, retry, batch, fallback ownership | [lambda-surfaces](references/lambda-surfaces.md) |
 | Cost review | [cost-and-noise](references/cost-and-noise.md) |
 | Review and verification | [review-rubric](references/review-rubric.md), [enforcement](references/enforcement.md) |
-| Logger only; no custom metric or trace | [validation-handler.ts](examples/typescript/src/validation-handler.ts) |
+| Logger only; diagnosis, not rejection-rate monitoring | [validation-handler.ts](examples/typescript/src/validation-handler.ts) |
 | Metrics only; batch fallback ratio | [batch-metrics.ts](examples/typescript/src/batch-metrics.ts) |
 | Tracer and one diagnostic log; no custom metric | [dependency-handler.ts](examples/typescript/src/dependency-handler.ts) |

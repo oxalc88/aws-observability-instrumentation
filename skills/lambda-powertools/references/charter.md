@@ -5,7 +5,7 @@ Govern operational telemetry for AWS Lambda, TypeScript/Node.js, CloudWatch, and
 ## Invariants
 
 - Start with a question and an operator action, then choose a signal and API.
-- Prefer managed AWS coverage before custom telemetry.
+- Treat metrics as the primary signal for aggregate monitoring and alerts; cover required questions with managed AWS metrics before custom telemetry. Logs and sampled traces cannot replace aggregate coverage.
 - Define metric meaning, dimensions, units, ownership, and emission frequency once. Define log diagnostics by failure category.
 - Measure at choke points. Helpers translate domain results/errors; the owning boundary emits.
 - Use closed categories, safe shape/type information, and bounded fields. Correlation identifiers are approved opaque values, never metric dimensions.

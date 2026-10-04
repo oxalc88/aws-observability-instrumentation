@@ -27,6 +27,8 @@ Inspected baseline:
 
 The root skill already warns against mechanically creating the metric triad. Its current Lambda example nevertheless creates custom invocation/failure metrics and completion logging without a consumer-specific decision. The Powertools skill makes the selection record precede API choice; this task does not refactor the root examples.
 
+Metrics remain the primary aggregate monitoring/alert signal. Independent selection means custom Powertools metrics are unnecessary when managed coverage suffices, not that aggregate requirements may be replaced with logs or sampled traces. The validation example intentionally covers individual diagnosis; rejection-rate monitoring requires compatible accepted/rejected outcome counts. Tracer is useful even within a single Lambda when timed DynamoDB/S3 calls locate execution latency. Selection, deployment activation, and per-invocation sampling are separate decisions.
+
 Root logging is governed and safe but its event schema alone does not guarantee a specific failed rule or dependency diagnosis. The new skill extends diagnostic sufficiency rather than inheriting mandatory metric linkage or inventing another logger.
 
 ## Sentry principles retained and adapted

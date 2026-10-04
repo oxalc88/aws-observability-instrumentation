@@ -78,4 +78,7 @@ export const handler = middy(lambdaHandler)
 
 // Deployment: active tracing + X-Ray role permissions, finite log retention,
 // application level INFO, SDK retry policy owned by consumer. Never log orderId.
+// This records sampled invocations, not every execution or only failures.
+// POWERTOOLS_TRACE_ENABLED=false disables Tracer. Instrument SDK calls once;
+// this example owns a manual DynamoDB subsegment instead of SDK auto-capture.
 // A supported trace path must still be verified in a real deployment.

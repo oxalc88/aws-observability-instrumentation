@@ -3,7 +3,10 @@ import type { APIGatewayProxyEventV2, Context } from "aws-lambda";
 
 // Question: Which safe rule rejected an enrichment request, and where?
 // AWS errors do not explain handled 400s. No aggregate question or dependency
-// path requires custom Metrics or Tracer in this example.
+// path requires custom Metrics or Tracer in this diagnosis-only example.
+// If rejection rate needs monitoring, count all completed validation decisions
+// as accepted/rejected at this request boundary; logs do not replace that metric.
+// See references/metrics.md for the aggregate contract and managed-first check.
 export const logger = new Logger({ serviceName: "orders", logLevel: "INFO" });
 const supportedFields = ["notes", "scheduled_at"] as const;
 

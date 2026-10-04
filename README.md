@@ -7,7 +7,7 @@ Two independent coding-agent skills for Amazon CloudWatch. Choose the instrument
 | CloudWatch/OpenTelemetry (`cloudwatch-instrumentation`, default) | Native OTLP/PromQL metrics, OTel portability, multiple AWS runtimes, or the existing TypeScript/Python governed layer | [Root SKILL.md](SKILL.md) |
 | Lambda Powertools (`lambda-powertools`) | AWS Lambda TypeScript/Node.js with Powertools Logger, optional classic EMF metrics, and optional X-Ray-backed Tracer | [Powertools SKILL.md](skills/lambda-powertools/SKILL.md) |
 
-For Powertools, start with an operational question and select each signal independently. A Lambda does not automatically need Logger + Metrics + Tracer. Read the [architecture analysis](docs/lambda-powertools-architecture.md) for evidence, retained Sentry principles, and the contract differences.
+For Powertools, start with an operational question. Metrics are primary for aggregate monitoring, trends, and alerts: reuse managed AWS metrics and add custom EMF metrics for gaps. Logs explain individual outcomes; traces reconstruct useful execution paths and dependency timing. Select each signal independently. A Lambda does not automatically need Logger + Metrics + Tracer. Read the [architecture analysis](docs/lambda-powertools-architecture.md) for evidence, retained Sentry principles, and the contract differences.
 
 This project is based on [Sentry Instrumentation](https://github.com/tortastudios/sentry-instrumentation), a skill that standardizes how application observability is instrumented. Credit for the contract-first approach and guidance on what to measure goes to the team at [Torta Studios](https://tortastudios.com/).
 
@@ -100,6 +100,10 @@ The independent skill lives in [`skills/lambda-powertools/`](skills/lambda-power
 | [Validation handler](skills/lambda-powertools/examples/typescript/src/validation-handler.ts) | Logger only | Which safe rule rejected the request? |
 | [Batch fallback metrics](skills/lambda-powertools/examples/typescript/src/batch-metrics.ts) | Metrics only | Is fallback usage increasing among completed record attempts? |
 | [Dependency handler](skills/lambda-powertools/examples/typescript/src/dependency-handler.ts) | Tracer + one failure log | Where is dependency time spent, and which dependency operation failed? |
+
+The Logger-only validation example answers a diagnostic question; it does not implement rejection-rate monitoring. If that rate needs monitoring, add a justified outcome metric counting accepted and rejected decisions at the request boundary, plus the existing diagnostic log. See [metrics](skills/lambda-powertools/references/metrics.md) for the contract.
+
+Tracing is useful for a Lambda execution timeline with DynamoDB, S3, or other meaningful dependency calls. It requires Lambda active tracing, X-Ray permissions, and handler/dependency instrumentation; only sampled invocations are recorded. See [when tracing is activated](skills/lambda-powertools/references/tracing.md#when-tracing-is-activated). The installer does not enable tracing in AWS.
 
 The snippets demonstrate instrumentation boundaries; they are not a complete order application. Copy only the selected example and relevant contract. The batch counts attempts, not exactly-once business operations. The dependency example uses a manual meaningful subsegment to avoid unrestricted SDK capture, with automatic HTTP/response/error capture disabled; its fixed public error policy is illustrative, and consumer retry/error semantics must be retained.
 

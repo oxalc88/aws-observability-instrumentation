@@ -4,6 +4,7 @@ Block telemetry that lacks a question, ownership, sufficient diagnostics, safe d
 
 ## Metrics
 
+- Does every required aggregate monitoring/alert question have adequate managed or custom metric coverage? Do not accept logs or sampled traces as a substitute.
 - Does each custom metric answer an aggregate operational question with a purpose and response owner?
 - Is its managed AWS/Lambda equivalent absent or demonstrably insufficient?
 - Is EMF/log volume justified along with metric series and maintenance?
