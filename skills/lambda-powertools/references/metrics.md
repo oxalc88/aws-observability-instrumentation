@@ -16,7 +16,7 @@ For validation requests, count every completed request and conditional classifie
 
 CloudWatch Metrics does not expose OTel counter/gauge/histogram constructors. Preserve semantics through unit, value, statistic, and boundary; do not copy OTel instrument code. A sum of loop durations is total batch time, not a per-record latency distribution.
 
-## Contract before `addMetric`
+## Contract before API calls
 
 Declare a fixed name, namespace, unit, purpose, question, owner, population, completion/start-stop boundary, statistic/query and denominator, dimension keys and closed values, emission frequency, sampling policy, and volume estimate. Keep meanings stable; changed unit/boundary/dimension meaning needs an explicit version/migration with downstream consumers.
 
@@ -27,13 +27,13 @@ CloudWatch series identity is namespace + metric name + complete dimension set/v
 ## Publication and lifecycle
 
 - Initialize Metrics outside the handler. Use only justified utilities/packages.
-- Aggregate counters/resource values in loops; add totals at batch exit. Publish a buffer once using `logMetrics` middleware, a decorator, or explicit `publishStoredMetrics()` in `finally`. Do not combine owners.
+- Aggregate counters/resource values in loops; add totals at batch exit. Publish a buffer once using the chosen SDK’s middleware/decorator or guarded explicit flush at completion/failure. Do not combine owners.
 - Keep all buffered measurements on one coherent dimension set. Changing a dimension between buffered items can associate values with the wrong context. Aggregate by bounded tuple and deliberately publish separate buffers only when needed.
 - Clear temporary metrics, dimensions, and metadata across warm invocations, including failed publication. Keep default dimensions static.
-- Do not enable ColdStart metrics, high-resolution metrics, singleMetric immediate emission, or additional dimension sets by default.
+- Do not enable ColdStart metrics, high-resolution metrics, immediate single-measurement publication, or additional dimension sets by default.
 - Do not sample exact totals. If latency sampling is justified, document bias and percentile limits; do not import Sentry's weighting claims.
 - Production publication errors must not replace application results. Catch SDK/serialization failures at the selected publication owner; verify loss separately. A hard timeout may prevent `finally`.
 
 The prescribed baseline establishes operational value; prove existing equivalence or record an exception if its budget cannot be met. For both baseline and additions, require operational value greater than **custom metric + EMF/log ingestion/storage/query volume + cardinality + maintenance**. See [cost-and-noise](cost-and-noise.md).
 
-API source: [Powertools Metrics](https://docs.aws.amazon.com/powertools/typescript/latest/features/metrics/).
+Read the selected SDK’s [language reference](language-adaptation.md) for API names, shared-state behavior, flushing/reset and official sources.

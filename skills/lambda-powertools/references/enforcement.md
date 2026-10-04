@@ -31,6 +31,17 @@ npm run check
 npm test
 ```
 
+For Python, use a separate environment and its pinned SDK dependencies:
+
+```bash
+cd skills/lambda-powertools/examples/python
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-lock.txt
+.venv/bin/python -m pytest -q
+```
+
+Other language ports must verify the same core contract with their native tools and official SDK behavior; examples are not a language allowlist.
+
 The example tests verify local privacy, aggregation, duplicate publication, cleanup, and failure containment. They do not contact AWS or prove trace continuity/EMF extraction in a deployment. The existing root OTel gate remains scoped to root examples/config; its prohibition of X-Ray is incompatible with this skill and must not be applied to the Powertools subtree.
 
 Do not describe the entire rubric as machine-enforced. Installation checks enforce selected-profile isolation; type checks and SDK-focused tests enforce representative examples. Human review owns the remaining semantic decisions.

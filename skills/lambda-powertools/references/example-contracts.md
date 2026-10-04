@@ -1,6 +1,8 @@
-# Canonical TypeScript coverage contracts
+# Shared coverage contracts and canonical language mappings
 
-The examples are instrumentation patterns, not an application or complete deployment. Extend existing project boundaries instead of copying every example. Each owns its emission sites; the tiny synchronous `metric-publication.ts` adapter contains SDK failures and resets buffers, dimensions, and metadata. No middleware also flushes these Metrics instances.
+The examples are instrumentation patterns, not an application or complete deployment. Extend existing project boundaries instead of copying every example. Each owns its emission sites; the tiny synchronous publication adapter for its language contains SDK failures and resets buffers, dimensions, and metadata. No middleware also flushes these Metrics instances.
+
+TypeScript/JavaScript and Python map the same measurement meanings, names/units, complete dimension sets, diagnostic fields and budgets below. SDK-specific API choices and retry metadata differ; see [language adaptation](language-adaptation.md). Other languages must preserve these semantics and verify their SDK behavior rather than copy syntax.
 
 ## Coverage map
 
@@ -8,7 +10,7 @@ The examples are instrumentation patterns, not an application or complete deploy
 | --- | --- | --- | --- |
 | Validation request | Lambda invocation count/runtime errors/duration | Application request count, classified failures, request latency; one safe rejection/internal failure log | No dependency/distributed path, retry, queue, fallback, or metered resource. Tracing disabled. Runtime invocation metrics do not cover handled rejection semantics |
 | Local batch stage | Lambda invocation metrics | Stage duration/classified failure; received/attempted/successful/failed record attempts; fallback count; unexpected failure diagnostic | No actual queue/ack, retry, resource or remote path. Tracing disabled. Do not copy to a distributed consumer without adding its queue/propagation coverage |
-| DynamoDB lookup | Lambda invocation metrics | Caller-specific logical call count/duration/failures/throttles; timed dependency subsegment; one terminal dependency failure log | Direct Lambda handler, not HTTP. No application retry loop/queue/workflow/fallback. SDK transport attempts are counted from actual response/error metadata, inside the logical call interval. Missing metadata is explicitly exposed as a coverage gap; do not infer attempts from one client.send |
+| DynamoDB lookup | Lambda invocation metrics | Caller-specific logical call count/duration/failures/throttles; timed dependency subsegment; one terminal dependency failure log | Direct Lambda handler, not HTTP. No application retry loop/queue/workflow/fallback. SDK transport attempts are counted from actual response/error metadata (v3 attempts includes the first; botocore RetryAttempts excludes it), inside the logical call interval. Missing metadata is explicitly exposed as a coverage gap; do not infer attempts from one client.send |
 
 Managed invocation coverage must still be verified in the consumer deployment. Trace activation/continuity and EMF extraction remain rollout checks, not locally proven capabilities.
 

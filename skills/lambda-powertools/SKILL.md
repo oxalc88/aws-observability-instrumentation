@@ -1,6 +1,6 @@
 ---
 name: lambda-powertools
-description: Apply prescribed operational coverage for AWS Lambda TypeScript/Node.js using CloudWatch and AWS Lambda Powertools Logger, Metrics (EMF), and Tracer. Use when adding or reviewing request, dependency, workflow, queue/batch, retry, fallback, resource, diagnostic logging, or distributed tracing instrumentation. Preserve Sentry-style required surface measurements; reuse proven equivalent AWS telemetry, fill gaps, and record exceptions. Excludes generic OTel architecture, other runtimes, Python parity, E2E frameworks, and test generation.
+description: Apply prescribed operational coverage for AWS Lambda across languages using CloudWatch and AWS Lambda Powertools Logger, Metrics (EMF), and Tracer. Use when adding or reviewing request, dependency, workflow, queue/batch, retry, fallback, resource, diagnostic logging, or distributed tracing instrumentation. Preserve Sentry-style required surface measurements; reuse proven equivalent AWS telemetry, fill gaps, and record exceptions. Excludes generic OTel architecture, non-Lambda platforms, E2E frameworks, and test generation.
 ---
 
 # Lambda Powertools
@@ -22,7 +22,7 @@ flowchart TD
 
 Evaluate all signals together; order here is not implementation priority. Metrics are primary for aggregate monitoring/alerts. Logs and sampled traces cannot replace metric coverage. Required measurements do not imply custom metrics when AWS/application equivalents already exist.
 
-1. Inspect Lambda triggers, dependencies, stages, retries/acks, fallback/resource use, existing emitters, deployment, and Powertools versions. Apply [required surface coverage](references/lambda-surfaces.md) even when the user has no preference.
+1. Detect the handler language/runtime from entry points, deployment and manifests. Apply this shared contract in any language; load [language adaptation](references/language-adaptation.md) and the matching SDK reference. TypeScript/Python are tested examples, not an allowlist. Inspect Lambda triggers, dependencies, stages, retries/acks, fallback/resource use, existing emitters, deployment, and Powertools versions. Apply [required surface coverage](references/lambda-surfaces.md) even when the user has no preference.
 2. Record each requirement as `managed`, `custom`, `not_applicable`, or `exception`, with question, owner, evidence, semantics and cost. Prove existing equivalence; report gaps with mitigation, owner and review date. Unknown requires assessment, not silent opt-out. Read [signal selection](references/signal-selection.md).
 3. Define custom metrics once: fixed name/unit, exactly one purpose (`outcome`, `latency`, `load`, `resource`, `correctness`), population, boundary, statistic/denominator, bounded dimensions, frequency, sampling and budget. Version meaning changes. Read [metrics](references/metrics.md) and [canonical contracts](references/example-contracts.md).
 4. Require one safe diagnostic event for each material failure/rejection/degradation/security outcome. Use its category contract, not generic `invalid_input`. Read [logging](references/logging.md), [diagnostic sufficiency](references/diagnostic-sufficiency.md), and [failure taxonomy](references/failure-taxonomy.md).
@@ -43,6 +43,9 @@ Evaluate all signals together; order here is not implementation priority. Metric
 
 | Need | Read |
 | --- | --- |
+| Language detection, other-language ports and SDK gaps | [language adaptation](references/language-adaptation.md) |
+| Node.js API/lifecycle/capture details | [TypeScript/JavaScript](references/languages/typescript.md) |
+| Python API/lifecycle/capture details | [Python](references/languages/python.md) |
 | Scope, Sentry preservation and AWS adaptation | [charter](references/charter.md) |
 | Required measurements/events/paths | [Lambda surfaces](references/lambda-surfaces.md) |
 | Coverage states, equivalence and exceptions | [signal selection](references/signal-selection.md) |
@@ -53,3 +56,5 @@ Evaluate all signals together; order here is not implementation priority. Metric
 | Request metrics + validation diagnostics; tracing not applicable | [validation-handler.ts](examples/typescript/src/validation-handler.ts) |
 | Batch outcome/duration/fallback metrics + terminal diagnostics | [batch-metrics.ts](examples/typescript/src/batch-metrics.ts) |
 | Dependency metrics + meaningful trace + terminal diagnostics | [dependency-handler.ts](examples/typescript/src/dependency-handler.ts) |
+
+Python equivalents: [validation_handler.py](examples/python/powertools_examples/validation_handler.py), [batch_metrics.py](examples/python/powertools_examples/batch_metrics.py), [dependency_handler.py](examples/python/powertools_examples/dependency_handler.py). Load only the implementation matching the handler.

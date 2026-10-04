@@ -1,6 +1,6 @@
 # Continue
 
-Both profiles are supported. Commands below retain the root OTel default; for Lambda TypeScript Powertools, add `--skill=lambda-powertools`. See [profile selection and conflict handling](README.md).
+Both profiles are supported. Commands below retain the root OTel default; for Lambda Powertools in any language, add `--skill=lambda-powertools`. See [profile selection and conflict handling](README.md).
 
 ```bash
 scripts/install.sh --skill=lambda-powertools --agent=continue --project=/path/to/project

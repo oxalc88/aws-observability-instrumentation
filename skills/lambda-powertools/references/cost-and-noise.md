@@ -13,7 +13,7 @@ Powertools Metrics writes EMF records to stdout. Lambda sends them to CloudWatch
 | Signal | Estimate | Reduce cost without losing meaning |
 | --- | --- | --- |
 | Metrics | Names × bounded dimension combinations, summed over dimension sets/namespaces | Reuse managed signals; remove dimensions and duplicate metrics |
-| EMF | Publications per invocation × invocations × mean/max encoded bytes, plus automatic buffer splits | Aggregate loops; buffer related metrics; avoid singleMetric and per-record publication |
+| EMF | Publications per invocation × invocations × mean/max encoded bytes, plus automatic buffer splits | Aggregate loops; buffer related metrics; avoid immediate single-measurement and per-record publication |
 | Logs | Records × encoded bytes, retention, query scan volume | Material outcomes; safe allowlisted fields; no INFO narration |
 | Traces | Sampled invocations × meaningful subsegments and metadata bytes | Trace only useful dependencies; no helper subsegments or duplicate capture |
 | Maintenance | Contracts, consumers, alarms, upgrades, investigation time | One owner, stable meaning, few canonical patterns |

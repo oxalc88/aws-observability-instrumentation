@@ -2,6 +2,11 @@
 
 Block telemetry that lacks a question, ownership, sufficient diagnostics, safe data, or an acceptable cost budget. Record the signal decision and evidence for any exception; do not waive payload/secret restrictions.
 
+## Language mapping
+
+- Is the actual handler language/runtime detected and the same core contract applied? No TypeScript/Python-only scope or copied cross-language flags.
+- Are SDK availability, metric state/cleanup, capture defaults and retry metadata verified, with focused tests for each port? SDK gaps are reported, not invented APIs or silent architecture switches.
+
 ## Required coverage
 
 - Has every applicable request, dependency, stage, queue/batch, retry, fallback and resource surface been assessed against the baseline, even without user preferences?
