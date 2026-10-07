@@ -2,6 +2,7 @@ import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import { Metrics, MetricUnit } from "@aws-lambda-powertools/metrics";
 import { publishMeasurements } from "./metric-publication.js";
 import { Logger } from "@aws-lambda-powertools/logger";
+import { diagnosticEvidence } from "./diagnostic-evidence.js";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import type { Context } from "aws-lambda";
 
@@ -71,6 +72,10 @@ function sdkAttempts(value: unknown): number | undefined {
   return undefined;
 }
 
+function reviewedField(value: unknown, field: string): unknown {
+  try { return (value as Record<string, unknown> | null)?.[field]; } catch { return undefined; }
+}
+
 function dependencyEvidence(error: unknown) {
   // Only select declared status/code values. Do not serialize or log the error.
   let status: unknown;
@@ -104,13 +109,22 @@ export async function lambdaHandler(event: { orderId: string }, context: Context
         "dependency.name": "dynamodb",
         "dependency.operation": "GetItem",
         ...dependencyEvidence(error),
+        ...diagnosticEvidence(error, {
+          httpStatus: reviewedField(reviewedField(error, "$metadata"), "httpStatusCode"),
+          providerCode: reviewedField(error, "code"),
+          // Explicitly reviewed SDK/adapter field; never pass an arbitrary response object.
+          providerMessage: reviewedField(error, "providerMessage"),
+          providerMessageApproved: true,
+        }),
+        "retry.decision": "propagate",
+        "retry.reason": "caller_owned_policy",
         request_id: context.awsRequestId,
       });
     } catch { /* Logging failure must not replace the dependency failure. */ }
-    // This example's application boundary uses a fixed public failure code;
-    // Lambda also serializes uncaught errors. Retain the consumer's existing
-    // error/retry policy; do not change it merely to add instrumentation.
-    throw new Error("ORDER_LOOKUP_FAILED");
+    // Preserve original exception identity/cause for the caller. A public HTTP
+    // handler must separately map outward responses without leaking internals.
+    // Uncaught Lambda platform error output is a distinct privacy review.
+    throw error;
   }
 }
 

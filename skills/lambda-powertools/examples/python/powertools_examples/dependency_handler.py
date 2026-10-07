@@ -13,6 +13,7 @@ from aws_lambda_powertools.metrics import EphemeralMetrics, MetricUnit
 from botocore.exceptions import ReadTimeoutError
 
 from .metric_publication import publish_measurements
+from .diagnostic_evidence import diagnostic_evidence
 
 os.environ["POWERTOOLS_TRACER_CAPTURE_RESPONSE"] = "false"
 os.environ["POWERTOOLS_TRACER_CAPTURE_ERROR"] = "false"
@@ -123,13 +124,21 @@ def lambda_handler(event, context):
             logger.error("Order lookup failed", extra={
                 "event.name": "order.dependency.failed", "operation.name": "order.lookup",
                 "stage": "lookup", "dependency.name": "dynamodb", "dependency.operation": "GetItem",
-                **dependency_evidence(error), "request_id": context.aws_request_id,
+                **dependency_evidence(error),
+                **diagnostic_evidence(
+                    error, http_status=safe_response(error).get("ResponseMetadata", {}).get("HTTPStatusCode"),
+                    provider_code=safe_response(error).get("Error", {}).get("Code"),
+                    provider_message=safe_response(error).get("Error", {}).get("Message"),
+                    provider_message_approved=True,  # reviewed SDK Error.Message field
+                ),
+                "retry.decision": "propagate", "retry.reason": "caller_owned_policy",
+                "request_id": context.aws_request_id,
             })
         except Exception:
             pass
-        # Illustrative application policy, never copy over consumer retry semantics.
-        # Suppress Python exception chaining so runtime output does not dump SDK text.
-        raise RuntimeError("ORDER_LOOKUP_FAILED") from None
+        # Preserve exception identity and causes. The outward response boundary
+        # must separately control public messages and platform error-output risks.
+        raise
 
 
 def handler(event, context):

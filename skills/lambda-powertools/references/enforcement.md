@@ -12,8 +12,8 @@ Retain Sentry's enforcement intent: fixed names, complete definitions, closed di
 
 Use the project's existing lint/CI and focused instrumentation unit checks:
 
-- Reject dynamic metric/event names, IDs in dimensions, raw event/body/error logging, INFO narration, and helper subsegments during review. Add project lint rules only where real bypasses occur.
-- Assert failure-category records contain safe rule/path/dependency/location and correlation; test pathological input without exposing values.
+- Reject dynamic metric/event names, IDs in dimensions, raw event/body/error logging, helper-step INFO narration, and helper subsegments. Do not reject approved sanitized error evidence or meaningful workflow INFO milestones. Add project lint rules only where real bypasses occur.
+- Assert failure-category records contain safe rule/path/dependency/location, correlation and available safe exact status, provider message, exception/causes. Cover unmapped HTTP 426, sensitive inputs, truncation, malformed provider responses, and original-error propagation.
 - Assert request acceptance/rejection totals and latency, dependency success/failure/throttle/timing, stage failure/duration, retry/fallback counts, and applicable queue/resource semantics at their boundaries. Trace sampling must not gate aggregate emission.
 - Capture Logger stdout and EMF in memory/local sinks. Assert one application event/publication, bounded dimensions, aggregate values, and no secrets.
 - Exercise two warm invocations and failed SDK publication; verify no retained keys/metrics and unchanged application outcomes.

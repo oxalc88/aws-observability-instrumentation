@@ -10,7 +10,7 @@ In the pinned SDK, `clear_metrics()` resets metric, temporary dimension, dimensi
 
 ## Logger
 
-Use Logger directly with safe `extra` fields. Never use `logger.exception`, `exc_info`, raw exception objects, payload dumps or unsafe field spreads for operational diagnostics. Pass invocation/record fields directly; the examples do not mutate persistent keys or decorate handlers to log invocation events. If using `inject_lambda_context`, disable `log_event` and use appropriate `clear_state`; keep `POWERTOOLS_LOGGER_LOG_EVENT=false` and inspect overrides. Python's WARN method is `warning`; required events must survive deployed levels.
+Use Logger directly with safe `extra` fields. Never use uncontrolled `logger.exception`, `exc_info`, raw exception objects, payload dumps or unsafe field spreads. Explicitly extract reviewed, sanitized exception messages, traceback and bounded `__cause__`/`__context__` details, with omission/redaction/truncation markers. Preserve the original error with bare `raise` or a causal `raise ... from error` when wrapping. See [error evidence](../error-evidence.md). Pass invocation/record fields directly; the examples do not mutate persistent keys or decorate handlers to log invocation events. If using `inject_lambda_context`, disable `log_event` and use appropriate `clear_state`; keep `POWERTOOLS_LOGGER_LOG_EVENT=false` and inspect overrides. Python's WARN method is `warning`; required events must survive deployed levels.
 
 ## Tracer and botocore
 
@@ -20,6 +20,6 @@ If using capture decorators, disable response and error capture (`capture_respon
 
 Botocore `ResponseMetadata.RetryAttempts` counts retries, excluding the first attempt. Convert actual observed metadata to attempts by adding one; invalid/absent evidence increments MissingAttemptEvidence. Do not equate this with queue redelivery or application retry exhaustion.
 
-Python uncaught errors can print chained exceptions. The example's fixed public RuntimeError uses `from None` to avoid dumping raw SDK context; this is illustrative application error policy, not a reason to alter consumer retry semantics. Never import root OTel examples as the Python implementation of this contract.
+Python uncaught errors can print chained exceptions outside Logger. Review platform output and the outer response/error boundary separately; do not use `from None` to destroy causal evidence. Preserve business retry semantics. Never import root OTel examples as the Python implementation of this contract.
 
 Sources: [Metrics/isolation](https://docs.aws.amazon.com/powertools/python/latest/core/metrics/), [Logger](https://docs.aws.amazon.com/powertools/python/latest/core/logger/), [Tracer](https://docs.aws.amazon.com/powertools/python/latest/core/tracer/), [boto3 retries](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/retries.html).
