@@ -33,8 +33,8 @@ Evaluate all signals together; order here is not implementation priority. Metric
 
 ## Hard rules
 
-- Never emit raw events/bodies/headers, credentials/tokens, arbitrary exception text/stacks, or sensitive data in logs, trace metadata, or EMF. Use allowlisted bounded diagnostic values.
-- No narrative INFO, helper metrics/subsegments, duplicate terminal logs, SDK/manual subsegments, or publication owners.
+- Never emit raw events/bodies/headers, credentials/tokens, arbitrary/unreviewed error objects, or sensitive data in logs, trace metadata, or EMF. Preserve exact observed HTTP status, approved provider code/message, and sanitized bounded exception message/stack/cause chain at material failures; record redaction, truncation and omissions. Separate observed evidence, internal classification and retry decision. Read [error evidence](references/error-evidence.md).
+- No helper-step narrative INFO, helper metrics/subsegments, duplicate terminal logs, SDK/manual subsegments, or publication owners. Meaningful workflow transitions with an operator reconstruction use case may emit bounded INFO.
 - Keep exact outcome/resource totals unsampled. A duration total is not a latency distribution. A processed record is not an acknowledged message or unique business event.
 - Keep business results/retries intact when telemetry fails; hard timeouts can bypass cleanup. Retain managed platform coverage and verify sustained telemetry loss separately.
 - Keep this contract separate from root `cloudwatch-instrumentation`: classic EMF metrics and X-Ray-backed Powertools Tracer, not root OTel/OTLP requirements.
@@ -50,7 +50,7 @@ Evaluate all signals together; order here is not implementation priority. Metric
 | Required measurements/events/paths | [Lambda surfaces](references/lambda-surfaces.md) |
 | Coverage states, equivalence and exceptions | [signal selection](references/signal-selection.md) |
 | Metric definitions, lifecycle, publication | [metrics](references/metrics.md), [example contracts](references/example-contracts.md) |
-| Safe diagnostic logging | [logging](references/logging.md), [diagnostic sufficiency](references/diagnostic-sufficiency.md), [failure taxonomy](references/failure-taxonomy.md) |
+| Safe diagnostic logging | [logging](references/logging.md), [diagnostic sufficiency](references/diagnostic-sufficiency.md), [error evidence](references/error-evidence.md), [failure taxonomy](references/failure-taxonomy.md) |
 | Dependency/distributed tracing and activation | [tracing](references/tracing.md) |
 | Cost, review and checks | [cost/noise](references/cost-and-noise.md), [review](references/review-rubric.md), [enforcement](references/enforcement.md) |
 | Request metrics + validation diagnostics; tracing not applicable | [validation-handler.ts](examples/typescript/src/validation-handler.ts) |
