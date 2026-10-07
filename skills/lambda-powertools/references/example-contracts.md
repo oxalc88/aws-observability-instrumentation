@@ -42,4 +42,4 @@ Classify unknown provider exceptions as `unknown`, not arbitrary exception names
 
 Missing SDK attempt evidence is a retry-coverage exception until the consumer verifies delivery: owner = instrumentation maintainer; mitigation = MissingAttemptEvidence monitoring and SDK metadata checks; review = before production rollout, no later than 2026-11-04. It does not fulfill exact attempt totals for those calls.
 
-Telemetry publication/cleanup/log/trace failures are best effort and preserve business results. If pre-publication reset fails, skip emission rather than publish stale diagnostic data. The dependency example's fixed outward error code is illustrative application policy; consumers must retain their own error/retry semantics.
+Telemetry publication/cleanup/log/trace failures are best effort and preserve business results. If pre-publication reset fails, skip emission rather than publish stale diagnostic data. The dependency example preserves the original error and reports sanitized original HTTP/provider/exception evidence. Consumers must retain their own outward response and retry semantics; do not expose internal errors directly to callers.
