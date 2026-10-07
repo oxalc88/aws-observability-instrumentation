@@ -330,3 +330,18 @@ def test_no_diagnostic_state_shared_between_records_or_cyclic_causes():
     assert second["http.status_code"] == 503
     assert second["provider.error_code"] == "SECOND"
     assert "FIRST" not in json.dumps(second)
+
+def test_total_diagnostic_budget_is_bounded_across_causes():
+    original = RuntimeError("x" * 700)
+    current = original
+    for _ in range(6):
+        child = RuntimeError("x" * 700)
+        current.__cause__ = child
+        current = child
+    record = diagnostic_evidence(
+        original, http_status=426, provider_message="msg" * 900,
+        provider_message_approved=True,
+    )
+    assert len(json.dumps(record).encode("utf-8")) <= 12 * 1024
+    assert len(record["diagnostic.truncated"]) >= 2
+
