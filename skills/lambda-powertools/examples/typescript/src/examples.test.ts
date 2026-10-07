@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { diagnosticEvidence } from "./diagnostic-evidence.js";
 import { afterEach, mock, test } from "node:test";
 import type { APIGatewayProxyEventV2, Context } from "aws-lambda";
 import { handler as validate, logger as validationLogger, metrics as validationMetrics } from "./validation-handler.js";
@@ -121,9 +122,10 @@ test("dependency failure emits one safe record and closes the meaningful boundar
   const names: string[] = [];
   const segment = { close: () => { closed++; }, addFaultFlag: () => { fault++; } };
   mock.method(tracer, "getSegment", () => ({ addNewSubsegment: (name: string) => { names.push(name); return segment; } }) as never);
-  mock.method(client, "send", async () => { throw Object.assign(new Error("SECRET SDK TEXT"), { $metadata: { httpStatusCode: 503 } }); });
+  const original = Object.assign(new Error("SECRET SDK TEXT"), { $metadata: { httpStatusCode: 503 } });
+  mock.method(client, "send", async () => { throw original; });
   const log = mock.method(dependencyLogger, "error", () => undefined);
-  await assert.rejects(lambdaHandler({ orderId: "PRIVATE_ORDER" }, context), /ORDER_LOOKUP_FAILED/);
+  await assert.rejects(lambdaHandler({ orderId: "PRIVATE_ORDER" }, context), (error) => error === original);
   assert.deepEqual(names, ["DynamoDB.GetItem"]);
   assert.equal(closed, 1);
   assert.equal(fault, 1);
@@ -131,8 +133,12 @@ test("dependency failure emits one safe record and closes the meaningful boundar
   const fields = log.mock.calls[0]?.arguments[1] as Record<string, unknown>;
   assert.equal(fields["dependency.operation"], "GetItem");
   assert.equal(fields["http.status_class"], "5xx");
+  assert.equal(fields["http.status_code"], 503);
+  assert.equal(fields["exception.name"], "Error");
+  assert.equal(typeof fields["exception.stack"], "string");
+  assert.equal(fields["retry.decision"], "propagate");
   assert.equal(fields.request_id, "invocation-1");
-  assert.doesNotMatch(JSON.stringify(fields), /SECRET|PRIVATE_ORDER|stack/);
+  assert.doesNotMatch(JSON.stringify(fields), /SECRET|PRIVATE_ORDER/);
 });
 
 test("trace setup failure preserves the dependency result", async () => {
@@ -301,4 +307,66 @@ test("handler restores parent context despite trace close failure", async () => 
   mock.method(client, "send", async () => ({ Item: {} }));
   assert.deepEqual(await tracedHandler({ orderId: "private" }, context), { found: true });
   assert.equal(active, parent);
+});
+
+test("unknown provider HTTP 426 retains approved code/message and independent classification", () => {
+  const original = new Error("Provider returned HTTP 426", { cause: new Error("connection upgraded") });
+  const evidence = diagnosticEvidence(original, {
+    httpStatus: 426, providerCode: "NON_DOCUMENTED_CODE",
+    providerMessage: "Unexpected condition reported by provider",
+    providerMessageApproved: true,
+  });
+  assert.equal(evidence["http.status_code"], 426);
+  assert.equal(evidence["http.status_class"], "4xx");
+  assert.equal(evidence["provider.error_code"], "NON_DOCUMENTED_CODE");
+  assert.equal(evidence["provider.error_message"], "Unexpected condition reported by provider");
+  assert.match(String(evidence["exception.stack"]), /Provider returned HTTP 426/);
+  assert.equal((evidence["exception.causes"] as Array<Record<string, unknown>>)[0]?.message, "connection upgraded");
+});
+
+test("sanitization removes sensitive material from all evidence surfaces", () => {
+  const original = new Error("Bearer my_access_token SECRET contact someone@example.com", {
+    cause: new Error("password=hunter2 request https://provider.test/path?token=abc123"),
+  });
+  const evidence = diagnosticEvidence(original, {
+    httpStatus: 426, providerCode: "STRANGE_CODE",
+    providerMessage: "Authorization: Bearer someToken email ops@example.com",
+    providerMessageApproved: true,
+  });
+  const json = JSON.stringify(evidence);
+  for (const secret of ["my_access_token", "hunter2", "abc123", "ops@example.com", "someone@example.com", "someToken"]) {
+    assert.equal(json.includes(secret), false, "leaked " + secret);
+  }
+  assert.ok((evidence["diagnostic.redacted"] as string[]).length > 0);
+});
+
+test("truncation, unexpected provider shape, unapproved text and cause cycles are declared", () => {
+  const original = new Error("x".repeat(1200));
+  original.stack = "Error: " + "line".repeat(2000);
+  (original as Error & { cause?: unknown }).cause = original;
+  const evidence = diagnosticEvidence(original, {
+    httpStatus: "426", providerCode: { code: "INVALID" },
+    providerMessage: "DO NOT LOG AN UNREVIEWED RESPONSE", providerMessageApproved: false,
+  });
+  assert.equal(evidence["http.status_code"], undefined);
+  assert.equal(evidence["provider.error_message"], undefined);
+  assert.equal(evidence["provider.error_code"], undefined);
+  assert.equal(String(evidence["exception.message"]).length, 512);
+  assert.equal(String(evidence["exception.stack"]).length, 4096);
+  assert.ok((evidence["diagnostic.truncated"] as string[]).includes("exception.stack"));
+  assert.ok((evidence["diagnostic.omitted"] as string[]).includes("provider.error_message:unapproved_source"));
+  assert.ok((evidence["diagnostic.omitted"] as string[]).includes("exception.causes:cycle"));
+});
+
+test("two records do not exchange diagnostic context and hostile getters cannot replace business error", () => {
+  const first = Object.defineProperty(new Error("first incident"), "cause", { get() { throw new Error("PRIVATE_SECRET"); } });
+  const second = new Error("second incident");
+  const a = diagnosticEvidence(first, { httpStatus: 426, providerCode: "FIRST" });
+  const b = diagnosticEvidence(second, { httpStatus: 503, providerCode: "SECOND" });
+  assert.equal(a["http.status_code"], 426);
+  assert.equal(b["http.status_code"], 503);
+  assert.equal(b["provider.error_code"], "SECOND");
+  assert.equal(JSON.stringify(b).includes("FIRST"), false);
+  assert.equal(first.message, "first incident");
+  assert.equal(second.message, "second incident");
 });
