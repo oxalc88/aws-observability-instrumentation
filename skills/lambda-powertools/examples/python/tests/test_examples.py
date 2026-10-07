@@ -7,6 +7,7 @@ from botocore.stub import Stubber
 
 from powertools_examples import batch_metrics as batch
 from powertools_examples import dependency_handler as dependency
+from powertools_examples.diagnostic_evidence import diagnostic_evidence
 from powertools_examples import validation_handler as validation
 
 CONTEXT = SimpleNamespace(aws_request_id="invocation-1")
@@ -182,9 +183,9 @@ def test_dependency_classified_failures_and_diagnostics_are_safe(code, category,
         raise original
     monkeypatch.setattr(dependency.client, "get_item", fail)
     monkeypatch.setattr(dependency.logger, "error", lambda message, **kwargs: logs.append(kwargs["extra"]))
-    with pytest.raises(RuntimeError, match="ORDER_LOOKUP_FAILED") as error:
+    with pytest.raises(ClientError) as error:
         dependency.lambda_handler({"orderId": "PRIVATE"}, CONTEXT)
-    assert error.value.__suppress_context__ is True
+    assert error.value is original
     record = emf(capsys)[0]
     assert record["failure_class"] == category
     assert point(record, "DependencyFailures") == 1
@@ -192,6 +193,10 @@ def test_dependency_classified_failures_and_diagnostics_are_safe(code, category,
     assert point(record, "DependencyAttempts") == 2
     assert len(logs) == 1
     assert logs[0]["dependency.operation"] == "GetItem" and logs[0]["http.status_class"] == "5xx"
+    assert logs[0]["http.status_code"] == 503
+    assert logs[0]["provider.error_code"] == code
+    assert isinstance(logs[0]["exception.stack"], str)
+    assert logs[0]["retry.decision"] == "propagate"
     assert logs[0]["request_id"] == "invocation-1"
     assert "SECRET" not in json.dumps([logs, record]) and "PRIVATE" not in json.dumps([logs, record])
 
@@ -277,3 +282,51 @@ def test_trace_failure_records_fault_without_raw_error_metadata(monkeypatch):
     assert recorder.names == ["DynamoDB.GetItem"]
     assert recorder.active is recorder.parent
     assert "SECRET" not in repr(recorder.__dict__)
+
+def test_unknown_provider_status_and_unmapped_diagnostics_are_preserved():
+    cause = RuntimeError("connection upgraded")
+    original = RuntimeError("Rappi returned HTTP 426")
+    original.__cause__ = cause
+    evidence = diagnostic_evidence(
+        original, http_status=426, provider_code="UNMAPPED_NEW_CODE",
+        provider_message="Unexpected provider condition", provider_message_approved=True,
+    )
+    assert evidence["http.status_code"] == 426
+    assert evidence["http.status_class"] == "4xx"
+    assert evidence["provider.error_code"] == "UNMAPPED_NEW_CODE"
+    assert evidence["provider.error_message"] == "Unexpected provider condition"
+    assert "Rappi returned HTTP 426" in evidence["exception.stack"]
+    assert evidence["exception.causes"][0]["message"] == "connection upgraded"
+
+
+def test_diagnostic_evidence_redacts_secrets_and_declares_truncation():
+    cause = RuntimeError("password=hunter2 https://provider.test/path?token=abc")
+    original = RuntimeError("Bearer longSecretValue SECRET contact someone@example.com")
+    original.__cause__ = cause
+    original.__traceback__ = None
+    evidence = diagnostic_evidence(
+        original, http_status=426,
+        provider_message="Authorization: Bearer abc123 ops@example.com",
+        provider_message_approved=True,
+    )
+    serialized = json.dumps(evidence)
+    for secret in ("hunter2", "longSecretValue", "abc123", "someone@example.com", "ops@example.com"):
+        assert secret not in serialized
+    assert evidence["diagnostic.redacted"]
+    oversized = RuntimeError("x" * 1300)
+    result = diagnostic_evidence(oversized, http_status="426", provider_message="UNREVIEWED")
+    assert len(result["exception.message"]) == 512
+    assert "exception.message" in result["diagnostic.truncated"]
+    assert "provider.error_message:unapproved_source" in result["diagnostic.omitted"]
+    assert "http.status_code:unavailable_or_invalid" in result["diagnostic.omitted"]
+
+
+def test_no_diagnostic_state_shared_between_records_or_cyclic_causes():
+    a, b = RuntimeError("first"), RuntimeError("second")
+    a.__cause__ = a
+    first = diagnostic_evidence(a, http_status=426, provider_code="FIRST")
+    second = diagnostic_evidence(b, http_status=503, provider_code="SECOND")
+    assert "exception.causes:cycle" in first["diagnostic.omitted"]
+    assert second["http.status_code"] == 503
+    assert second["provider.error_code"] == "SECOND"
+    assert "FIRST" not in json.dumps(second)
