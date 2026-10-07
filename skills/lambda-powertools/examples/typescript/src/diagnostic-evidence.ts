@@ -11,7 +11,7 @@ export interface ProviderErrorFields {
   providerMessageApproved?: boolean;
 }
 
-const LIMITS = { code: 128, message: 512, stack: 4096, causes: 4 };
+const LIMITS = { code: 128, message: 512, stack: 4096, causes: 4, textBudgetBytes: 10 * 1024 };
 const read = (value: unknown, key: string): unknown => {
   try {
     if (value === null || (typeof value !== "object" && typeof value !== "function")) return undefined;
@@ -20,7 +20,7 @@ const read = (value: unknown, key: string): unknown => {
 };
 
 function boundedText(value: unknown, field: string, limit: number, state: {
-  redacted: string[]; truncated: string[]; omitted: string[];
+  redacted: string[]; truncated: string[]; omitted: string[]; remainingBytes: number;
 }, approved = true): string | undefined {
   if (!approved) { state.omitted.push(field + ":unapproved_source"); return undefined; }
   if (typeof value !== "string" || !value.trim()) {
@@ -45,12 +45,19 @@ function boundedText(value: unknown, field: string, limit: number, state: {
   }
   if (redacted) state.redacted.push(field);
   if (text.length > limit) { text = text.slice(0, limit); state.truncated.push(field); }
+  if (Buffer.byteLength(text, "utf8") > state.remainingBytes) {
+    text = text.slice(0, Math.max(0, state.remainingBytes));
+    while (text.length && Buffer.byteLength(text, "utf8") > state.remainingBytes) text = text.slice(0, -1);
+    if (!state.truncated.includes(field)) state.truncated.push(field);
+  }
+  if (!text) { state.omitted.push(field + ":budget_exhausted"); return undefined; }
+  state.remainingBytes -= Buffer.byteLength(text, "utf8");
   return text;
 }
 
 /** Only examined, field-specific values are emitted. Never spread source objects. */
 export function diagnosticEvidence(error: unknown, provider: ProviderErrorFields = {}): DiagnosticRecord {
-  const state = { redacted: [] as string[], truncated: [] as string[], omitted: [] as string[] };
+  const state = { redacted: [] as string[], truncated: [] as string[], omitted: [] as string[], remainingBytes: LIMITS.textBudgetBytes };
   const out: DiagnosticRecord = {};
   const status = provider.httpStatus;
   if (typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599) {
