@@ -12,6 +12,7 @@ MAX_CAUSES = 4
 def diagnostic_evidence(error, *, http_status=None, provider_code=None,
                         provider_message=None, provider_message_approved=False):
     redacted, truncated, omitted = [], [], []
+    remaining = [10 * 1024]  # reserve headroom for keys, identifiers and markers
     record = {}
     if type(http_status) is int and 100 <= http_status <= 599:
         record["http.status_code"] = http_status
@@ -42,6 +43,16 @@ def diagnostic_evidence(error, *, http_status=None, provider_code=None,
         if len(clean) > limit:
             truncated.append(field)
             clean = clean[:limit]
+        if len(clean.encode("utf-8")) > remaining[0]:
+            clean = clean[:remaining[0]]
+            while clean and len(clean.encode("utf-8")) > remaining[0]:
+                clean = clean[:-1]
+            if field not in truncated:
+                truncated.append(field)
+        if not clean:
+            omitted.append(f"{field}:budget_exhausted")
+            return None
+        remaining[0] -= len(clean.encode("utf-8"))
         return clean
 
     def assign(value, field, limit, approved=True):
@@ -64,10 +75,18 @@ def diagnostic_evidence(error, *, http_status=None, provider_code=None,
         prefix = "exception" if depth == 0 else f"exception.causes[{depth-1}]"
         node = {}
         name = safe_text(type(current).__name__, prefix + ".name", 128)
-        message = safe_text(str(current), prefix + ".message", 512)
-        stack = safe_text("".join(traceback.format_exception(
-            type(current), current, current.__traceback__, chain=False
-        )), prefix + ".stack", 4096)
+        try:
+            message_text = str(current)
+        except Exception:
+            message_text = None
+        try:
+            stack_text = "".join(traceback.format_exception(
+                type(current), current, current.__traceback__, chain=False
+            ))
+        except Exception:
+            stack_text = None
+        message = safe_text(message_text, prefix + ".message", 512)
+        stack = safe_text(stack_text, prefix + ".stack", 4096)
         if name is not None: node["name"] = name
         if message is not None: node["message"] = message
         if stack is not None: node["stack"] = stack
