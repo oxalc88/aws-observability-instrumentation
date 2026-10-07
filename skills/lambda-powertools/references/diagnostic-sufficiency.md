@@ -12,8 +12,8 @@ All failure events need stable `event.name`, `operation.name`, `stage`, `failure
 | --- | --- |
 | Validation | `validation.code`, `validation.rule`, `validation.path`, `validation.expected`, `validation.received_type`; a fixed schema/code location if path is not enough |
 | Business rule | Closed `business.rule`, safe `reason`, and fixed `location` or rule stage |
-| Dependency/timeout/rate limit | `dependency.name`, `dependency.operation`, safe `reason`; `http.status_class` for HTTP, `retry.attempt`/attempt count when retry occurred |
-| Internal/invariant/unknown | Closed `reason`, fixed `location`, safe allowlisted error type when helpful, deployment version if it changes investigation |
+| Dependency/timeout/rate limit | `dependency.name`, `dependency.operation`, observed exact `http.status_code` when available, `http.status_class`, approved sanitized `provider.error_code` / `provider.error_message`, and retry/attempt evidence |
+| Internal/invariant/unknown | Closed `reason`, fixed `location`, sanitized original exception name/message/stack and bounded cause chain (or explicit omission), deployment version when useful |
 | Fallback/degradation | Selected fallback, closed trigger reason, affected stage/location/dependency, and expected operational effect |
 | Security | Closed decision/rule, security relevance, safe actor class and resource class if necessary; no principal secret/token |
 
@@ -41,3 +41,7 @@ All failure events need stable `event.name`, `operation.name`, `stage`, `failure
 The code/rule identifies the condition, path/stage locate it, safe shape explains it, and request ID provides a pivot. `{ "reason": "invalid_input" }` cannot do this.
 
 Keep correlation opaque, bounded, and from a trusted metadata contract. A string-length/regex check does not prove that a caller-supplied ID contains no personal data or token. Use request ID when no approved workflow ID exists.
+
+## Evidence required at production INFO baseline
+
+An actionable failure WARN/ERROR must preserve **available and approved** exact external status/code/message and sanitized original exception/cause evidence. Do not require later DEBUG or a reproduction. Track fields that were redacted, truncated or omitted; do not fabricate missing details. Keep `failure.class` / `reason` (classification) separate from `retry.decision` / `retry.reason` (action). An unmapped HTTP 426 must stay 426 even when the class is `unknown`. See [error evidence](error-evidence.md).
