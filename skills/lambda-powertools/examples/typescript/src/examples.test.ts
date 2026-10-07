@@ -370,3 +370,22 @@ test("two records do not exchange diagnostic context and hostile getters cannot 
   assert.equal(first.message, "first incident");
   assert.equal(second.message, "second incident");
 });
+
+test("cumulative error diagnostics respect the configured per-record text budget", () => {
+  const original = new Error("x".repeat(700));
+  original.stack = "frame".repeat(1500);
+  let current = original;
+  for (let i = 0; i < 6; i++) {
+    const next = new Error("x".repeat(700));
+    next.stack = "frame".repeat(1500);
+    (current as Error & { cause?: Error }).cause = next;
+    current = next;
+  }
+  const evidence = diagnosticEvidence(original, {
+    httpStatus: 426, providerCode: "UNEXPECTED",
+    providerMessage: "provider diagnostic".repeat(100),
+    providerMessageApproved: true,
+  });
+  assert.ok(Buffer.byteLength(JSON.stringify(evidence), "utf8") <= 12 * 1024);
+  assert.ok((evidence["diagnostic.truncated"] as string[]).length > 1);
+});
