@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { diagnosticEvidence } from "./diagnostic-evidence.js";
+import { diagnosticEvidence, emitDiagnostic } from "./diagnostic-evidence.js";
 import { afterEach, mock, test } from "node:test";
 import type { APIGatewayProxyEventV2, Context } from "aws-lambda";
 import { handler as validate, logger as validationLogger, metrics as validationMetrics } from "./validation-handler.js";
@@ -309,12 +309,11 @@ test("handler restores parent context despite trace close failure", async () => 
   assert.equal(active, parent);
 });
 
-test("unknown provider HTTP 426 retains approved code/message and independent classification", () => {
+test("unknown provider HTTP 426 retains sanitized code/message and independent classification", () => {
   const original = new Error("Provider returned HTTP 426", { cause: new Error("connection upgraded") });
   const evidence = diagnosticEvidence(original, {
     httpStatus: 426, providerCode: "NON_DOCUMENTED_CODE",
     providerMessage: "Unexpected condition reported by provider",
-    providerMessageApproved: true,
   });
   assert.equal(evidence["http.status_code"], 426);
   assert.equal(evidence["http.status_class"], "4xx");
@@ -331,7 +330,6 @@ test("sanitization removes sensitive material from all evidence surfaces", () =>
   const evidence = diagnosticEvidence(original, {
     httpStatus: 426, providerCode: "STRANGE_CODE",
     providerMessage: "Authorization: Bearer someToken email ops@example.com",
-    providerMessageApproved: true,
   });
   const json = JSON.stringify(evidence);
   for (const secret of ["my_access_token", "hunter2", "abc123", "ops@example.com", "someone@example.com", "someToken"]) {
@@ -340,21 +338,20 @@ test("sanitization removes sensitive material from all evidence surfaces", () =>
   assert.ok((evidence["diagnostic.redacted"] as string[]).length > 0);
 });
 
-test("truncation, unexpected provider shape, unapproved text and cause cycles are declared", () => {
+test("unexpected provider shape and cause cycles preserve available evidence", () => {
   const original = new Error("x".repeat(1200));
   original.stack = "Error: " + "line".repeat(2000);
   (original as Error & { cause?: unknown }).cause = original;
   const evidence = diagnosticEvidence(original, {
     httpStatus: "426", providerCode: { code: "INVALID" },
-    providerMessage: "DO NOT LOG AN UNREVIEWED RESPONSE", providerMessageApproved: false,
+    providerMessage: "DO NOT LOG AN UNREVIEWED RESPONSE",
   });
   assert.equal(evidence["http.status_code"], undefined);
-  assert.equal(evidence["provider.error_message"], undefined);
-  assert.equal(evidence["provider.error_code"], undefined);
-  assert.equal(String(evidence["exception.message"]).length, 512);
-  assert.equal(String(evidence["exception.stack"]).length, 4096);
-  assert.ok((evidence["diagnostic.truncated"] as string[]).includes("exception.stack"));
-  assert.ok((evidence["diagnostic.omitted"] as string[]).includes("provider.error_message:unapproved_source"));
+  assert.equal(evidence["provider.error_message"], "DO NOT LOG AN UNREVIEWED RESPONSE");
+  assert.equal(JSON.stringify(evidence["provider.error_code"]), JSON.stringify({ code: "INVALID" }));
+  assert.equal(String(evidence["exception.message"]).length, 1200);
+  assert.equal(String(evidence["exception.stack"]).length, 8007);
+  assert.deepEqual(evidence["diagnostic.truncated"], []);
   assert.ok((evidence["diagnostic.omitted"] as string[]).includes("exception.causes:cycle"));
 });
 
@@ -371,7 +368,7 @@ test("two records do not exchange diagnostic context and hostile getters cannot 
   assert.equal(second.message, "second incident");
 });
 
-test("cumulative error diagnostics respect the configured per-record text budget", () => {
+test("long stacks and all six causes are retained without cuts", () => {
   const original = new Error("x".repeat(700));
   original.stack = "frame".repeat(1500);
   let current = original;
@@ -384,8 +381,105 @@ test("cumulative error diagnostics respect the configured per-record text budget
   const evidence = diagnosticEvidence(original, {
     httpStatus: 426, providerCode: "UNEXPECTED",
     providerMessage: "provider diagnostic".repeat(100),
-    providerMessageApproved: true,
   });
-  assert.ok(Buffer.byteLength(JSON.stringify(evidence), "utf8") <= 12 * 1024);
-  assert.ok((evidence["diagnostic.truncated"] as string[]).length > 1);
+  assert.equal((evidence["exception.causes"] as unknown[]).length, 6);
+  assert.equal(evidence["exception.stack"], original.stack);
+  assert.ok((evidence["exception.causes"] as Record<string, unknown>[]).every(cause => cause.stack === "frame".repeat(1500)));
+  assert.deepEqual(evidence["diagnostic.truncated"], []);
+});
+
+test("unknown response formats preserve numeric codes, structure and sanitize keys and values", () => {
+  for (const response of [{ unknown: [17, { message: "undocumented", code: 731 }] }, ["undocumented", 731], 731, false, null, "non-JSON undocumented text"]) {
+    const evidence = diagnosticEvidence(new Error("original"), { httpStatus: 426, providerCode: 731, providerResponse: response });
+    assert.equal(evidence["provider.error_code"], 731);
+    assert.equal(evidence["http.status_code"], 426);
+    assert.equal(JSON.stringify(evidence["provider.error_response"]), JSON.stringify(response));
+  }
+  const response = { unfamiliar: "ops@example.com", token: { nested: "abc123" }, password: "hunter2", "ops@example.com": "safe", extra: { authorization: "Bearer abc123" } };
+  const e = diagnosticEvidence(new Error("failure"), { providerResponse: response });
+  assert.doesNotMatch(JSON.stringify(e), /abc123|hunter2|ops@example.com/);
+  assert.ok((e["diagnostic.redacted"] as string[]).length);
+  const hostile = Object.defineProperty({}, "surprise", { enumerable: true, get() { throw Error("PRIVATE_SECRET"); } });
+  const h = diagnosticEvidence(new Error("failure"), { providerResponse: hostile });
+  assert.ok((h["diagnostic.omitted"] as string[]).some(x => x.includes("accessor_failed")));
+  const cyclic: Record<string, unknown> = {}; cyclic.self = cyclic;
+  assert.match(JSON.stringify(diagnosticEvidence(new Error("failure"), { providerResponse: cyclic })), /cycle/);
+});
+
+test("multipart evidence reassembles exactly at INFO and failed parts are declared", () => {
+  const records: Record<string, unknown>[] = [];
+  const original = new Error("original"); original.stack = "frame 😀\n".repeat(16000);
+  const evidence = diagnosticEvidence(original, { httpStatus: 426, providerCode: 731, providerResponse: { unknown: "large".repeat(15000) } });
+  const fake = { error: (_: string, record: object) => records.push(record as Record<string, unknown>), warn: () => {} };
+  assert.equal(emitDiagnostic(fake as never, "Dependency failed", { request_id: "one", "failure.class": "unknown", "retry.decision": "propagate" }, evidence), true);
+  const parts = records.filter(r => r["diagnostic.kind"] === "part");
+  assert.ok(parts.length > 1);
+  assert.equal(Buffer.concat(parts.map(r => Buffer.from(String(r["diagnostic.data"]), "base64"))).toString("utf8"), JSON.stringify(evidence));
+  assert.ok(records.every(r => Buffer.byteLength(JSON.stringify(r)) + 8192 <= 60 * 1024));
+  assert.equal(new Set(records.map(r => r["diagnostic.id"])).size, 1);
+  const manifest = records.at(-1)!;
+  assert.equal(manifest["diagnostic.parts"], parts.length);
+  assert.equal(manifest["diagnostic.emission_complete"], true);
+  records.length = 0;
+  let calls = 0;
+  fake.error = (_, record) => { if (++calls === 2) throw Error("sink unavailable"); return records.push(record as Record<string, unknown>); };
+  assert.equal(emitDiagnostic(fake as never, "Dependency failed", {}, evidence), false);
+  assert.equal(records.at(-1)!["diagnostic.emission_complete"], false);
+  assert.equal(records.at(-1)!["diagnostic.failed_parts"], 1);
+  const unavailable = { error() { throw Error("offline"); }, warn() { throw Error("offline"); } };
+  assert.equal(emitDiagnostic(unavailable as never, "Dependency failed", {}, evidence), false);
+});
+
+test("real Powertools INFO logger emits ordered WARN evidence parts within the budget", () => {
+  const lines: string[] = [];
+  mock.method(process.stdout, "write", (chunk: unknown) => { lines.push(String(chunk)); return true; });
+  mock.method(process.stderr, "write", (chunk: unknown) => { lines.push(String(chunk)); return true; });
+  const evidence = diagnosticEvidence(new Error("original"), { httpStatus: 426, providerCode: 731, providerResponse: "undocumented 😀\n".repeat(12000) });
+  assert.equal(emitDiagnostic(dependencyLogger, "Dependency failed", { request_id: "one" }, evidence, "warn"), true);
+  const records = lines.map(line => JSON.parse(line));
+  assert.ok(records.length > 2);
+  assert.ok(records.every(r => r.level === "WARN" && r.service === "orders"));
+  assert.ok(lines.every(line => Buffer.byteLength(line, "utf8") < 60 * 1024));
+  const parts = records.filter(r => r["diagnostic.kind"] === "part");
+  assert.equal(Buffer.concat(parts.map(r => Buffer.from(r["diagnostic.data"], "base64"))).toString("utf8"), JSON.stringify(evidence));
+});
+
+test("HTTP 426 boundary preserves numeric evidence and original identity when all telemetry fails", async () => {
+  const original = Object.assign(new Error("original"), { $metadata: { httpStatusCode: 426 }, code: 731,
+    providerMessage: "Undocumented upgrade condition", providerResponse: { unknown: [731, "Undocumented upgrade condition"] } });
+  mock.method(client, "send", async () => { throw original; });
+  mock.method(tracer, "getSegment", () => { throw Error("trace unavailable"); });
+  const log = mock.method(dependencyLogger, "error", () => undefined);
+  await assert.rejects(lambdaHandler({ orderId: "private" }, context), e => e === original);
+  const record = log.mock.calls[0]!.arguments[1] as Record<string, unknown>;
+  assert.equal(record["http.status_code"], 426);
+  assert.equal(record["provider.error_code"], 731);
+  assert.equal(record["provider.error_message"], original.providerMessage);
+  assert.equal(JSON.stringify(record["provider.error_response"]), JSON.stringify(original.providerResponse));
+  assert.equal(record["failure.class"], "unknown");
+  assert.equal(record["retry.decision"], "propagate");
+  mock.method(dependencyLogger, "error", () => { throw Error("logger unavailable"); });
+  mock.method(dependencyMetrics, "publishStoredMetrics", () => { throw Error("metrics unavailable"); });
+  await assert.rejects(lambdaHandler({ orderId: "private" }, context), e => e === original);
+  mock.method(client, "send", async () => ({ Item: {} }));
+  assert.deepEqual(await lambdaHandler({ orderId: "private" }, context), { found: true });
+});
+
+test("JSON transport text sanitizes nested credentials without hiding unknown evidence", () => {
+  assert.equal(diagnosticEvidence(new Error("original"), { providerCode: "123456789012" })["provider.error_code"], "123456789012");
+  const evidence = diagnosticEvidence(new Error("original"), { providerResponse: '{"unknown":[731,"undocumented"],"access_token":"opaqueCredential","nested":{"password":"hunter2"}}' });
+  const body = JSON.parse(String(evidence["provider.error_response"]));
+  assert.deepEqual(body.unknown, [731, "undocumented"]);
+  assert.doesNotMatch(JSON.stringify(evidence), /opaqueCredential|hunter2/);
+  assert.ok((evidence["diagnostic.normalized"] as string[]).includes("provider.error_response"));
+});
+
+test("unavailable original stack is declared without serializing a throwing accessor", () => {
+  const original = Object.defineProperty(new Error("original"), "stack", { get() { throw Error("PRIVATE_SECRET"); } });
+  const evidence = diagnosticEvidence(original);
+  assert.equal(evidence["exception.stack"], undefined);
+  assert.ok((evidence["diagnostic.omitted"] as string[]).includes("exception.stack:accessor_failed"));
+  assert.equal(evidence["diagnostic.capture_complete"], false);
+  assert.doesNotMatch(JSON.stringify(evidence), /PRIVATE_SECRET/);
+  assert.equal(original.message, "original");
 });

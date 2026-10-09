@@ -7,7 +7,7 @@ from botocore.stub import Stubber
 
 from powertools_examples import batch_metrics as batch
 from powertools_examples import dependency_handler as dependency
-from powertools_examples.diagnostic_evidence import diagnostic_evidence
+from powertools_examples.diagnostic_evidence import diagnostic_evidence, emit_diagnostic
 from powertools_examples import validation_handler as validation
 
 CONTEXT = SimpleNamespace(aws_request_id="invocation-1")
@@ -289,7 +289,7 @@ def test_unknown_provider_status_and_unmapped_diagnostics_are_preserved():
     original.__cause__ = cause
     evidence = diagnostic_evidence(
         original, http_status=426, provider_code="UNMAPPED_NEW_CODE",
-        provider_message="Unexpected provider condition", provider_message_approved=True,
+        provider_message="Unexpected provider condition",
     )
     assert evidence["http.status_code"] == 426
     assert evidence["http.status_class"] == "4xx"
@@ -307,7 +307,6 @@ def test_diagnostic_evidence_redacts_secrets_and_declares_truncation():
     evidence = diagnostic_evidence(
         original, http_status=426,
         provider_message="Authorization: Bearer abc123 ops@example.com",
-        provider_message_approved=True,
     )
     serialized = json.dumps(evidence)
     for secret in ("hunter2", "longSecretValue", "abc123", "someone@example.com", "ops@example.com"):
@@ -315,9 +314,9 @@ def test_diagnostic_evidence_redacts_secrets_and_declares_truncation():
     assert evidence["diagnostic.redacted"]
     oversized = RuntimeError("x" * 1300)
     result = diagnostic_evidence(oversized, http_status="426", provider_message="UNREVIEWED")
-    assert len(result["exception.message"]) == 512
-    assert "exception.message" in result["diagnostic.truncated"]
-    assert "provider.error_message:unapproved_source" in result["diagnostic.omitted"]
+    assert len(result["exception.message"]) == 1300
+    assert result["diagnostic.truncated"] == []
+    assert result["provider.error_message"] == "UNREVIEWED"
     assert "http.status_code:unavailable_or_invalid" in result["diagnostic.omitted"]
 
 
@@ -331,17 +330,164 @@ def test_no_diagnostic_state_shared_between_records_or_cyclic_causes():
     assert second["provider.error_code"] == "SECOND"
     assert "FIRST" not in json.dumps(second)
 
-def test_total_diagnostic_budget_is_bounded_across_causes():
-    original = RuntimeError("x" * 700)
+def test_all_six_causes_and_long_messages_are_retained():
+    original = RuntimeError("x" * 7000)
     current = original
     for _ in range(6):
-        child = RuntimeError("x" * 700)
+        child = RuntimeError("x" * 7000)
         current.__cause__ = child
         current = child
     record = diagnostic_evidence(
         original, http_status=426, provider_message="msg" * 900,
-        provider_message_approved=True,
     )
-    assert len(json.dumps(record).encode("utf-8")) <= 12 * 1024
-    assert len(record["diagnostic.truncated"]) >= 2
+    assert len(record["exception.causes"]) == 6
+    assert all(len(cause["stack"]) > 4096 for cause in record["exception.causes"])
+    assert len(record["provider.error_message"]) == 2700
+    assert record["diagnostic.truncated"] == []
 
+
+@pytest.mark.parametrize("response", [{"unknown": [17, {"message": "undocumented", "code": 731}]}, ["undocumented", 731], 731, False, None, "non-JSON undocumented text"])
+def test_unknown_response_formats_and_numeric_codes(response):
+    evidence = diagnostic_evidence(RuntimeError("original"), http_status=426, provider_code=731, provider_response=response)
+    assert evidence["http.status_code"] == 426
+    assert evidence["provider.error_code"] == 731
+    assert evidence["provider.error_response"] == response
+
+
+def test_response_secrets_cycles_and_throwing_cause_accessors():
+    response = {"unknown": "ops@example.com", "token": {"nested": "abc123"}, "password": "hunter2", "ops@example.com": "safe"}
+    evidence = diagnostic_evidence(RuntimeError("failure"), provider_response=response)
+    for secret in ("ops@example.com", "abc123", "hunter2"):
+        assert secret not in json.dumps(evidence)
+    cyclic = {}
+    cyclic["self"] = cyclic
+    assert "cycle" in json.dumps(diagnostic_evidence(RuntimeError("failure"), provider_response=cyclic))
+
+    class HostileError(Exception):
+        @property
+        def __cause__(self):
+            raise RuntimeError("PRIVATE_SECRET")
+    result = diagnostic_evidence(HostileError("original"))
+    assert "exception.causes:accessor_failed" in result["diagnostic.omitted"]
+    assert "PRIVATE_SECRET" not in json.dumps(result)
+
+
+def test_multipart_roundtrip_and_failed_parts():
+    import base64
+    import hashlib
+    records = []
+    class Sink:
+        calls = 0
+        fail_at = None
+        def error(self, message, *, extra):
+            self.calls += 1
+            if self.calls == self.fail_at:
+                raise RuntimeError("sink unavailable")
+            records.append(extra)
+    evidence = diagnostic_evidence(RuntimeError("long 😀 message" * 12000), http_status=426, provider_code=731,
+                                   provider_response={"unknown": "large" * 15000})
+    sink = Sink()
+    assert emit_diagnostic(sink, "Dependency failed", {"request_id": "one", "failure.class": "unknown", "retry.decision": "propagate"}, evidence)
+    parts = [r for r in records if r.get("diagnostic.kind") == "part"]
+    assert len(parts) > 1
+    data = b"".join(base64.b64decode(r["diagnostic.data"]) for r in parts)
+    assert json.loads(data) == evidence
+    assert all(len(json.dumps(r).encode()) + 8192 <= 60 * 1024 for r in records)
+    assert len({r["diagnostic.id"] for r in records}) == 1
+    assert records[-1]["diagnostic.sha256"] == hashlib.sha256(data).hexdigest()
+    assert records[-1]["diagnostic.parts"] == len(parts)
+    records.clear()
+    sink = Sink()
+    sink.fail_at = 2
+    assert not emit_diagnostic(sink, "Dependency failed", {}, evidence)
+    assert records[-1]["diagnostic.emission_complete"] is False
+    assert records[-1]["diagnostic.failed_parts"] == 1
+
+
+def test_recursive_traceback_keeps_every_available_frame():
+    def recurse(depth):
+        if depth:
+            recurse(depth - 1)
+        else:
+            raise RuntimeError("original")
+    try:
+        recurse(90)
+    except RuntimeError as error:
+        evidence = diagnostic_evidence(error)
+        assert evidence["exception.stack"].count("in recurse") == 91
+        assert len(evidence["exception.stack"]) > 4096
+        assert "repeated" not in evidence["exception.stack"]
+
+
+def test_real_powertools_info_logger_emits_warn_parts_within_budget(capsys):
+    from aws_lambda_powertools import Logger
+    import base64
+    import io
+    stream = io.StringIO()
+    logger = Logger(service="evidence-offline-test", level="INFO", stream=stream)
+    evidence = diagnostic_evidence(RuntimeError("original"), http_status=426, provider_code=731,
+                                   provider_response="undocumented 😀\n" * 12000)
+    assert emit_diagnostic(logger, "Dependency failed", {"request_id": "one"}, evidence, level="warning")
+    lines = stream.getvalue().splitlines()
+    records = [json.loads(line) for line in lines]
+    assert len(records) > 2
+    assert all(r["level"] == "WARNING" for r in records)
+    assert all(len(line.encode()) < 60 * 1024 for line in lines)
+    parts = [r for r in records if r.get("diagnostic.kind") == "part"]
+    assert json.loads(b"".join(base64.b64decode(r["diagnostic.data"]) for r in parts)) == evidence
+
+
+def test_http_426_unknown_body_original_identity_and_telemetry_failures(monkeypatch):
+    original = RuntimeError("original")
+    original.response = {"Error": {"Code": 731, "Message": "Undocumented upgrade condition", "unknown": [17]},
+                         "ResponseMetadata": {"HTTPStatusCode": 426}}
+    records = []
+    def fail(**kwargs):
+        raise original
+    monkeypatch.setattr(dependency.client, "get_item", fail)
+    monkeypatch.setattr(dependency.logger, "error", lambda message, **kwargs: records.append(kwargs["extra"]))
+    with pytest.raises(RuntimeError) as caught:
+        dependency.lambda_handler({"orderId": "private"}, CONTEXT)
+    assert caught.value is original
+    assert records[0]["provider.error_code"] == 731
+    assert records[0]["http.status_code"] == 426
+    assert records[0]["provider.error_response"] == original.response
+    assert records[0]["failure.class"] == "unknown"
+    assert records[0]["retry.decision"] == "propagate"
+    # Unexpected Error shape must not prevent capture of the actual body.
+    original.response["Error"] = [731, "undocumented"]
+    with pytest.raises(RuntimeError):
+        dependency.lambda_handler({"orderId": "private"}, CONTEXT)
+    assert records[-1]["provider.error_response"]["Error"] == [731, "undocumented"]
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("telemetry unavailable")
+    monkeypatch.setattr(dependency.logger, "error", unavailable)
+    monkeypatch.setattr(dependency.metrics, "flush_metrics", unavailable)
+    monkeypatch.setattr(dependency.tracer.provider, "get_trace_entity", unavailable)
+    with pytest.raises(RuntimeError) as caught:
+        dependency.lambda_handler({"orderId": "private"}, CONTEXT)
+    assert caught.value is original
+    monkeypatch.setattr(dependency.client, "get_item", lambda **kwargs: {"Item": {}})
+    assert dependency.lambda_handler({"orderId": "private"}, CONTEXT) == {"found": True}
+
+
+def test_json_transport_text_redacts_nested_credentials_without_hiding_unknown_fields():
+    assert diagnostic_evidence(RuntimeError("original"), provider_code="123456789012")["provider.error_code"] == "123456789012"
+    evidence = diagnostic_evidence(RuntimeError("original"), provider_response='{"unknown":[731,"undocumented"],"access_token":"opaqueCredential","nested":{"password":"hunter2"}}')
+    assert json.loads(evidence["provider.error_response"])["unknown"] == [731, "undocumented"]
+    for secret in ("opaqueCredential", "hunter2"):
+        assert secret not in json.dumps(evidence)
+    assert "provider.error_response" in evidence["diagnostic.normalized"]
+
+
+def test_unavailable_original_formatter_preserves_cause_and_declares_loss():
+    class HostileError(Exception):
+        def __str__(self):
+            raise RuntimeError("PRIVATE_SECRET")
+    original = HostileError()
+    original.__cause__ = RuntimeError("original cause")
+    evidence = diagnostic_evidence(original)
+    assert "exception.message:unavailable" in evidence["diagnostic.omitted"]
+    assert evidence["exception.causes"][0]["message"] == "original cause"
+    assert evidence["diagnostic.capture_complete"] is False
+    assert "PRIVATE_SECRET" not in json.dumps(evidence)

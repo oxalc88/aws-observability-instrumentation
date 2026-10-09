@@ -13,7 +13,7 @@ from aws_lambda_powertools.metrics import EphemeralMetrics, MetricUnit
 from botocore.exceptions import ReadTimeoutError
 
 from .metric_publication import publish_measurements
-from .diagnostic_evidence import diagnostic_evidence
+from .diagnostic_evidence import UNAVAILABLE, diagnostic_evidence, emit_diagnostic
 
 os.environ["POWERTOOLS_TRACER_CAPTURE_RESPONSE"] = "false"
 os.environ["POWERTOOLS_TRACER_CAPTURE_ERROR"] = "false"
@@ -60,6 +60,20 @@ def safe_response(value):
         return response if isinstance(response, dict) else {}
     except Exception:
         return {}
+
+
+def response_field(error, section, field):
+    try:
+        return safe_response(error).get(section, {}).get(field)
+    except Exception:
+        return None
+
+
+def error_response(error):
+    try:
+        return getattr(error, "response", UNAVAILABLE)
+    except Exception:
+        return UNAVAILABLE
 
 
 def sdk_attempts(value):
@@ -121,19 +135,19 @@ def lambda_handler(event, context):
         return {"found": "Item" in response}
     except Exception as error:
         try:
-            logger.error("Order lookup failed", extra={
+            evidence = diagnostic_evidence(
+                error, http_status=response_field(error, "ResponseMetadata", "HTTPStatusCode"),
+                provider_code=response_field(error, "Error", "Code"),
+                provider_message=response_field(error, "Error", "Message"),
+                provider_response=error_response(error),
+            )
+            emit_diagnostic(logger, "Order lookup failed", {
                 "event.name": "order.dependency.failed", "operation.name": "order.lookup",
                 "stage": "lookup", "dependency.name": "dynamodb", "dependency.operation": "GetItem",
                 **dependency_evidence(error),
-                **diagnostic_evidence(
-                    error, http_status=safe_response(error).get("ResponseMetadata", {}).get("HTTPStatusCode"),
-                    provider_code=safe_response(error).get("Error", {}).get("Code"),
-                    provider_message=safe_response(error).get("Error", {}).get("Message"),
-                    provider_message_approved=True,  # reviewed SDK Error.Message field
-                ),
                 "retry.decision": "propagate", "retry.reason": "caller_owned_policy",
                 "request_id": context.aws_request_id,
-            })
+            }, evidence)
         except Exception:
             pass
         # Preserve exception identity and causes. The outward response boundary

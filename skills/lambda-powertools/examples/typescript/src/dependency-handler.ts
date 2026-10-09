@@ -2,7 +2,7 @@ import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import { Metrics, MetricUnit } from "@aws-lambda-powertools/metrics";
 import { publishMeasurements } from "./metric-publication.js";
 import { Logger } from "@aws-lambda-powertools/logger";
-import { diagnosticEvidence } from "./diagnostic-evidence.js";
+import { diagnosticEvidence, emitDiagnostic } from "./diagnostic-evidence.js";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import type { Context } from "aws-lambda";
 
@@ -102,24 +102,25 @@ export async function lambdaHandler(event: { orderId: string }, context: Context
     return { found: response.Item !== undefined };
   } catch (error) {
     try {
-      logger.error("Order lookup failed", {
+      const body = reviewedField(error, "providerResponse");
+      const evidence = diagnosticEvidence(error, {
+        httpStatus: reviewedField(reviewedField(error, "$metadata"), "httpStatusCode"),
+        providerCode: reviewedField(error, "code"),
+        // Error response body only; never a request or successful response.
+        providerMessage: reviewedField(error, "providerMessage"),
+        providerResponse: body === undefined ? reviewedField(reviewedField(error, "$response"), "body") : body,
+      });
+      emitDiagnostic(logger, "Order lookup failed", {
         "event.name": "order.dependency.failed",
         "operation.name": "order.lookup",
         stage: "lookup",
         "dependency.name": "dynamodb",
         "dependency.operation": "GetItem",
         ...dependencyEvidence(error),
-        ...diagnosticEvidence(error, {
-          httpStatus: reviewedField(reviewedField(error, "$metadata"), "httpStatusCode"),
-          providerCode: reviewedField(error, "code"),
-          // Explicitly reviewed SDK/adapter field; never pass an arbitrary response object.
-          providerMessage: reviewedField(error, "providerMessage"),
-          providerMessageApproved: true,
-        }),
         "retry.decision": "propagate",
         "retry.reason": "caller_owned_policy",
         request_id: context.awsRequestId,
-      });
+      }, evidence);
     } catch { /* Logging failure must not replace the dependency failure. */ }
     // Preserve original exception identity/cause for the caller. A public HTTP
     // handler must separately map outward responses without leaking internals.
