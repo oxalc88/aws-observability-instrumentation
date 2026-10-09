@@ -30,8 +30,8 @@ Block telemetry that lacks a question, ownership, sufficient diagnostics, safe d
 - Are all prescribed material failures/rejections/degradation/security outcomes covered by one safe diagnostic event, or a visible non-applicability/exception?
 - Is INFO free of helper-step narration while retaining reviewed business/async milestones needed for reconstructing a transaction?
 - Does the event identify operation/stage/class and a specific safe reason/rule plus location/dependency and correlation?
-- Does its category contract preserve approved original evidence for unknown provider errors and exact statuses (including HTTP 426) so investigators avoid blind reproduction?
-- Are generic `invalid_input`, raw error dumps, raw bodies/headers/payloads, sensitive fields, and unbounded object spreads absent? Are approved sanitized exception/provider messages and stacks present with explicit redaction/truncation/omission?
+- Does its category contract preserve sanitized original evidence for unknown provider errors and exact statuses (including HTTP 426) so investigators avoid blind reproduction?
+- Are generic `invalid_input`, raw error dumps, raw requests/headers, successful authentication payloads, sensitive fields, and unbounded object spreads absent? Are sanitized exception/provider messages and stacks present with explicit redaction/truncation/omission?
 - Are field names, paths, values, arrays, and correlations safe and bounded?
 - Does one boundary emit one terminal application event, with no helper log-and-rethrow duplicates?
 - Do runtime levels/sampling retain required security/error evidence? Is warm/concurrent record context safe?
@@ -50,3 +50,5 @@ Block telemetry that lacks a question, ownership, sufficient diagnostics, safe d
 ## Final decision
 
 Ask: **Could an engineer understand what failed and where to investigate next without blindly reproducing the request?** A JSON object alone is not proof. Also ask what was omitted: a Lambda does not automatically need all three utilities.
+
+Verify numeric provider codes, unknown response formats, all available stack/cause frames, cycles and throwing accessors, and multipart reconstruction with missing-part detection. Essential evidence must survive INFO filtering at WARN/ERROR. Confirm original exception identity and business results under telemetry failures; report platform delivery and sanitizer limitations.

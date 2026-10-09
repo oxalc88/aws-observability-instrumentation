@@ -10,7 +10,7 @@ The small synchronous metric-publication.ts helper contains SDK failures. It is 
 
 ## Logger
 
-Use Logger directly. If using context middleware, set `injectLambdaContext(logger, { logEvent: false, resetKeys: true })`. Keep `POWERTOOLS_LOGGER_LOG_EVENT=false`; review deployment overrides. The examples pass request fields directly and do not use event logging middleware. Never pass an unchecked Error object or arbitrary object spread to Logger. Extract reviewed, sanitized and bounded message/stack/cause fields with explicit omission, redaction and truncation markers. Preserve original errors when propagating (`throw error`; when wrapping, use `new Error(..., { cause: error })`). See [error evidence](../error-evidence.md). DEBUG sampling increases verbosity; it is not workflow evidence retention.
+Use Logger directly. If using context middleware, set `injectLambdaContext(logger, { logEvent: false, resetKeys: true })`. Keep `POWERTOOLS_LOGGER_LOG_EVENT=false`; review deployment overrides. The examples pass request fields directly and do not use event logging middleware. Never pass an unchecked Error object or arbitrary object spread to Logger. Extract sanitized messages and complete available stack/cause fields with explicit omission, redaction and truncation markers. Preserve original errors when propagating (`throw error`; when wrapping, use `new Error(..., { cause: error })`). See [error evidence](../error-evidence.md). DEBUG sampling increases verbosity; it is not workflow evidence retention.
 
 ## Tracer
 

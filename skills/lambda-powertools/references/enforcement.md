@@ -12,10 +12,10 @@ Retain Sentry's enforcement intent: fixed names, complete definitions, closed di
 
 Use the project's existing lint/CI and focused instrumentation unit checks:
 
-- Reject dynamic metric/event names, IDs in dimensions, raw event/body/error logging, helper-step INFO narration, and helper subsegments. Do not reject approved sanitized error evidence or meaningful workflow INFO milestones. Add project lint rules only where real bypasses occur.
-- Assert failure-category records contain safe rule/path/dependency/location, correlation and available safe exact status, provider message, exception/causes. Cover unmapped HTTP 426, sensitive inputs, truncation, malformed provider responses, and original-error propagation.
+- Reject dynamic metric/event names, IDs in dimensions, raw event/body/error logging, helper-step INFO narration, and helper subsegments. Do not reject sanitized error evidence or meaningful workflow INFO milestones. Add project lint rules only where real bypasses occur.
+- Assert failure-category records contain safe rule/path/dependency/location, correlation and available safe exact status, provider message, exception/causes. Cover unmapped HTTP 426, numeric/textual codes, unknown formats, sensitive inputs, full available stacks and all causes, cycles/accessor failures, multipart reconstruction/loss, and original-error propagation.
 - Assert request acceptance/rejection totals and latency, dependency success/failure/throttle/timing, stage failure/duration, retry/fallback counts, and applicable queue/resource semantics at their boundaries. Trace sampling must not gate aggregate emission.
-- Capture Logger stdout and EMF in memory/local sinks. Assert one application event/publication, bounded dimensions, aggregate values, and no secrets.
+- Capture Logger stdout and EMF in memory/local sinks. Assert one logical application outcome (allow ordered correlated continuation parts), one metric publication, bounded dimensions, aggregate values, and no secrets.
 - Exercise two warm invocations and failed SDK publication; verify no retained keys/metrics and unchanged application outcomes.
 - Require the explicit tracing enable/disable record and verify code/deployment agree with it. If causality is required, report unsupported continuity as a gap rather than treating correlation logs as trace coverage.
 - Inspect middleware order and effective capture flags. Assert no automatic full-error/response capture under the selected trace contract.

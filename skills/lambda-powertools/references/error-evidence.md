@@ -1,63 +1,41 @@
 # Diagnostic error evidence for AWS Lambda Powertools
 
-Use this contract at the owning material failure boundary. It is language-independent; TypeScript and Python examples are adaptations, not the supported-language list.
+Apply at the owning material failure boundary in any language. The examples demonstrate data preparation and direct Powertools Logger calls, not another logger framework.
 
-## Separate three concerns
+## Separate evidence, classification and decision
 
-- **Observed:** exact `http.status_code` (integer when received), `http.status_class` as an optional derived convenience, sanitized `provider.error_code` and `provider.error_message` even if previously unknown, and local `exception.name`, `exception.message`, `exception.stack` and `exception.causes` when available.
-- **Classification:** bounded `failure.class` and `reason`; `unknown` is valid and does not suppress evidence.
-- **Decision:** explicit `retry.decision` and `retry.reason` from the application's existing policy. Do not infer the cause, business behavior, or retry policy from HTTP status alone.
+- **Observed:** exact received integer `http.status_code`; optional derived `http.status_class`; `provider.error_response` with the sanitized error body; original numeric or textual `provider.error_code` / `provider.error_message` when separately available; original exception name/message/stack and all available causes.
+- **Classification:** closed `failure.class` and `reason`. `unknown` is valid and must not erase the observed response, status or exception.
+- **Decision:** `retry.decision` and `retry.reason` from existing application policy. Instrumentation must not change business outcomes, infer cause/retry from status, introduce retries, or substitute a new exception.
 
-Use one terminal WARN/ERROR at the owning boundary, not log-and-rethrow in every helper. Record material INFO workflow transitions (received, routed, accepted, published, processed) only when a declared operator can reconstruct the workflow from them. Preserve original correlation across Lambda/SQS/retries, along with per-record message ID and invocation ID. Never mix concurrent batch-record context.
+HTTP 426 with an undocumented message and code 731 must retain 426, that message and numeric 731 even with `failure.class=unknown`. No error catalog or provider mapping is required to preserve evidence. Preserve unknown fields and JSON objects, arrays, scalars, null and text; do not reduce unexpected shapes to type/size alone. Capture only the received error response, not a request or successful authentication response. SDKs may not expose the original body: distinguish the SDK error representation from transport bytes, record unavailable sources, and capture transport evidence at the adapter without consuming a stream twice or changing business behavior. Do not spread a whole exception, client, request or response envelope into Logger.
 
-## Security policy: approved sources and bounded diagnostics
+## Sanitization with provenance
 
-1. **Capture source, not whole objects.** Only read reviewed provider fields (e.g. status, declared error code/message field), not raw bodies/responses/headers/error spreads. Unknown *values* in an approved field may be preserved; an unknown payload shape does **not** authorize dumping its contents.
-2. **Sanitize all free text before Logger.** Neutralize control characters, redact obvious credentials, tokens, authorization values, URLs with query strings, emails and other sensitive patterns. Apply maximum sizes to each field **and** the complete event. Sanitizing by regex alone cannot prove arbitrary free text contains no PII; each external message field needs an explicit data-handling review and access/retention policy. Omit unsafe/unknown values if review or reliable redaction is absent.
-3. **Never erase omissions.** Emit `diagnostic.redacted`, `diagnostic.truncated` and `diagnostic.omitted` as field-name lists where relevant. For unexpected/non-JSON responses prefer observed status, content type and size or safe schema/type evidence; set an omission reason rather than logging a raw body. Do not claim an incomplete stack is complete.
-4. **Example budgets** (overridable only after review): max 512 chars per provider/exception message, 128 per code, 4096 per stack, 4 causes, 12 KiB total diagnostic event. Never attach diagnostic strings to metric dimensions, EMF, or arbitrary trace metadata.
-5. **Preserve provenance.** Keep original exception identity when rethrowing; use `cause` (JS) or `raise ... from error` (Python) when wrapping. The local stack shows our execution path, not the provider's server-side stack unless supplied by the provider.
-6. **Check separate emission paths.** Uncaught runtime/Lambda error serialization can leak unsanitized messages independently of Powertools Logger; consider the outer error/response boundary and test it. Do not enable raw Powertools/SDK trace exception or response capture merely to obtain log evidence. No second delivery pipeline.
+Sanitize recursively before Logger or fragmentation, including dynamic keys, nested arrays, text, exception messages and every stack. Redact credentials, bearer/session tokens, cookies, private keys, URL user information/query/fragment and personal data. Preserve the surrounding response and non-sensitive numeric/textual codes; replacing everything with `UNKNOWN` or `TECHNICAL_FAILURE` is insufficient. Never log full requests or successful auth responses. Never attach this evidence to metrics/EMF or unchecked trace metadata.
 
-## Illustrative unknown provider failure
+Declare affected paths in `diagnostic.redacted`, unavailable/unsupported/accessor-failed/cyclic evidence in `diagnostic.omitted`, and any unavoidable truncation in `diagnostic.truncated`. Declare transport JSON text normalization in `diagnostic.normalized`; decoding JSON for recursive sanitization must preserve unknown fields and scalar types. Paths and omission reasons must not themselves expose dynamic sensitive keys or accessor exception text. Sanitized key collisions must be declared. `diagnostic.capture_complete=false` when capture loses evidence; redaction is explicit even if capture otherwise succeeds. Unknown provider shape is not an omission reason by itself.
 
-```json
-{
-  "level": "ERROR",
-  "event.name": "order.dependency.failed",
-  "operation.name": "order.process",
-  "stage": "provider.accept",
-  "request_id": "lambda-invocation",
-  "correlation_id": "approved-correlation",
-  "http.status_code": 426,
-  "http.status_class": "4xx",
-  "provider.error_code": "UNMAPPED_CODE",
-  "provider.error_message": "Unexpected upgrade requirement",
-  "failure.class": "unknown",
-  "reason": "unmapped_dependency_failure",
-  "retry.decision": "fail",
-  "retry.reason": "existing_policy",
-  "exception.name": "ProviderCallError",
-  "exception.message": "Provider returned HTTP 426",
-  "exception.stack": "ProviderCallError: Provider returned HTTP 426\\n at adapter:23",
-  "exception.causes": [],
-  "diagnostic.redacted": [],
-  "diagnostic.truncated": [],
-  "diagnostic.omitted": []
-}
-```
+The reference sanitizers cover common credentials and personal-data patterns plus sensitive field names. Regexes cannot identify every personal name, opaque secret or localized identifier in arbitrary prose. Extend a shared data-handling sanitizer for the destination and test realistic samples; it does not require a provider error catalog. If safe capture cannot be established, record the particular unavailable/redacted source and loss explicitly, preserve remaining evidence, and report the unresolved coverage gap. Protect log access and retention. Do not describe sanitized output as raw bytes or untouched evidence.
 
-All names/values above are illustrative, not a recorded provider response.
+## Original exceptions and runtime limits
 
-## Acceptance/evals
+Keep the original exception identity on propagation (`throw error` / bare `raise`); intentional business wrapping must retain `cause` / `raise ... from error`. Never replace an exception because telemetry failed. Preserve the complete available stack for the main exception and each cause, with no 4096-character cut, message cut or four-node cap. Cause count excludes the main exception. Detect cycles by identity and declare them; throwing accessors/string formatters must produce unavailable markers and cannot replace the business exception. Python must also follow implicit context when not suppressed and avoid traceback formatting that collapses repeated frames. Do not capture locals.
 
-- A provider HTTP 426 with unknown safe error code/message retains exact status and approved text, not only `4xx` / `unknown`.
-- A local exception preserves sanitized name/message/stack/cause chain; source-map deployment is documented; truncation/omissions are visible.
-- Explicit test data with bearer tokens, API keys, URL queries, email/PII, malformed responses, enormous stacks and cyclic/throwing causes cannot leak via the structured record. Unknown unreviewed free-text providers fail closed.
-- WARN/ERROR at deployed INFO carries sufficient evidence; DEBUG is optional and cannot restore previously filtered data.
-- A cross-invocation workflow can be followed by correlation ID; parallel batch records never exchange identities; exactly one terminal application error is logged.
-- Logger/metrics/tracer failures do not replace original business errors, retries or target decisions.
+“Complete” means available runtime evidence, not every historical frame. Node's [Error.stackTraceLimit](https://nodejs.org/download/release/v22.18.0/docs/api/errors.html) limits capture when exceptions are created; set a deliberate runtime frame policy before execution if more frames are needed, and record its limit. Logging cannot recover discarded frames. Deploy matching source maps and activate Node source-map support, verify frames against the exact build, and sanitize paths. Python traceback/source availability and custom formatters also constrain evidence. Examples label `diagnostic.stack_scope=runtime_available_frames`; they do not assert source maps are deployed. Declare native, remote, missing and formatter-lost stacks rather than inventing them.
 
-## Deployment verification
+## Oversized evidence on the same log route
 
-Coordinate Powertools Logger level with Lambda Advanced Logging Controls; check effective versions/aliases, change propagation, rollback, deployment drift and EMF extraction under the selected Lambda JSON logging configuration. The code example is not proof of deployed filter behavior. Never promise every failure has a sampled trace.
+Use Powertools Logger directly at WARN/ERROR with both Logger and Lambda application filtering permitting those levels under INFO. Essential evidence cannot depend on DEBUG or sampled traces. One failure has one logical diagnostic; continuation parts are not additional business failures. Use Lambda stdout → the same CloudWatch log group/stream, with no second exporter or external storage requirement.
+
+The [CloudWatch Logs quota](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/cloudwatch_limits_cwl.html) lists 1,024 KiB per event (checked 2026-10-09). The effective route can have smaller limits. Verify deployed Lambda JSON framing, Powertools serialization/enrichment and downstream collectors. Budget the final serialized UTF-8 event including envelope, escaping and correlation fields, not just source text length. The examples deliberately use a conservative 60 KiB event budget with 8 KiB reserved for the runtime/Powertools envelope; verify this reserve under the consumer's deployment. Oversized envelope/context produces a declared loss, not an oversized silent record.
+
+For oversized evidence, sanitize first, serialize once as UTF-8 JSON, then emit ordered base64 byte parts via the same Logger/level. Each part carries `diagnostic.id`, `diagnostic.part` (1-based), `diagnostic.parts`, `diagnostic.encoding`, request/workflow correlation, operation and existing classification/decision. Base64 preserves split multi-byte characters and avoids newline/quote expansion; it is not encryption. Emit a final manifest with count, serialized byte length, SHA-256, capture completeness, emission completeness and failed part count. A failed part must not prevent attempts to emit remaining parts and a manifest. Attempt a minimal loss event on preparation/serialization/sink failure without exposing the failing exception. If the sink is wholly unavailable, no same-route loss record can be guaranteed; return failure to telemetry health monitoring while preserving the business result.
+
+Reconstruct only after grouping by diagnostic ID, sorting unique part indexes and checking all expected parts, byte length and digest. Missing/duplicate/conflicting parts or absent manifest mean incomplete evidence, even if emission calls succeeded. `diagnostic.emission_complete` reports calls, not a CloudWatch delivery acknowledgement. Never label a partial response/stack complete. If deadlines, memory or provider decoding impose unavoidable loss, declare it and verify sustained loss using independent platform monitoring; do not add arbitrary silent caps. The examples assemble evidence in memory, so load-test large responses/chains against the Lambda memory/time budget.
+
+## Acceptance and deployment checks
+
+Test HTTP 426/undocumented messages/numeric codes; unknown object fields, arrays, scalars, null and text; long stacks and more than four causes; recursive frames, cycles and throwing accessors; nested secrets/PII and sensitive keys; exact multipart reconstruction and partial emission failure. Test original exception identity and successful business results when Logger/Metrics/Tracer fail. Include INFO-baseline WARN/ERROR output and absence of raw requests/successful auth payloads.
+
+Check Lambda Advanced Logging Controls against Powertools levels, aliases/versions, rollout/rollback/drift and EMF extraction. Test realistic source maps and platform error serialization separately: uncaught Lambda runtime errors may expose the original unsanitized message independently of application logging. Keep public response policy and business propagation intact, and report that separate exposure. Local tests do not prove CloudWatch delivery, trace continuity, arbitrary PII detection or availability under hard timeouts.
