@@ -104,5 +104,4 @@ export async function lambdaHandler(event: { orderId: string }, context: Context
 
 export const handler = middy(lambdaHandler).use(captureLambdaHandler(tracer, {
   captureResponse: false,
-  captureError: false,
 }));
