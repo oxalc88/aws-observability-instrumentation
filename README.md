@@ -35,7 +35,7 @@ Keep this skill in a separate clone instead of nesting its Git repository inside
 
 ### Pin a version
 
-Check out a release tag that contains the selected skill before running the installer. The historical `v0.1.0` example below contains the root OTel skill; use a release containing `skills/lambda-powertools/` for the new profile:
+Check out a release tag that contains the selected skill before running the installer. The Powertools profile declares its skill version in frontmatter; the root changelog tracks repository releases. Version 0.2.0 updates the Powertools policy; a tag is only available after it is published. The historical `v0.1.0` example below contains the root OTel skill; use a release containing `skills/lambda-powertools/` for the new profile:
 
 ```bash
 git clone https://github.com/oxalc88/aws-observability-instrumentation.git
@@ -93,7 +93,7 @@ The agent will read `SKILL.md`, select the matching runtime and signal paths, us
 
 ## Lambda Powertools skill
 
-The independent skill lives in [`skills/lambda-powertools/`](skills/lambda-powertools/SKILL.md). It governs five metric purposes, material logs with category-specific diagnostic contracts, useful dependency/workflow tracing, and CloudWatch noise/cost. The core contract is language neutral. Agents detect the handler language, then load SDK-specific guidance. TypeScript/JavaScript and Python examples are tested mappings, not a language allowlist; Java, .NET and other ports preserve the same requirements while verifying available SDK APIs. References load on demand. It uses Powertools directly and does not depend on the root OTel logger, metrics registry, collector, or gate.
+The independent skill lives in [`skills/lambda-powertools/`](skills/lambda-powertools/SKILL.md). It governs five metric purposes, material logs with category-specific diagnostic contracts, useful dependency/workflow tracing, and CloudWatch noise/cost. The core contract is language neutral. Metrics coverage remains governed; Logger and Tracer prefer native Powertools with safe, minimal instrumentation. Agents load only task-relevant references and SDK guidance. TypeScript/JavaScript and Python examples are tested mappings, not a language allowlist; Java, .NET and other ports preserve the same requirements while verifying available SDK APIs. References load on demand. It uses Powertools directly and does not depend on the root OTel logger, metrics registry, collector, or gate.
 
 The [surface baseline](skills/lambda-powertools/references/lambda-surfaces.md) preserves Sentry's required request/dependency/stage/queue/retry/fallback measurements. The [coverage record](skills/lambda-powertools/references/signal-selection.md) uses managed, custom, not_applicable, or exception. Unknown requires assessment; an exception remains a gap with mitigation, owner, and review date. Managed Lambda metrics normally cover invocation semantics, but not handled request rejections or caller-specific SDK durations.
 

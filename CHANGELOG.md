@@ -1,8 +1,20 @@
 # Changelog
 
-All notable changes to the `cloudwatch-instrumentation` skill are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version numbers follow [SemVer](https://semver.org/spec/v2.0.0.html).
+All notable changes to both `cloudwatch-instrumentation` and `lambda-powertools` skills are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version numbers follow [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Added
+
+- **Lambda Powertools skill eval fixtures**: organic scenarios and a behavior-based rubric for blinded current-vs-candidate comparisons. Agent behavior evals are recommended for policy changes but are not required by the Agent Skills format; unit tests and CI remain required for example code.
+
+### Changed
+
+- **Lambda Powertools 0.2.0**: keep existing Metrics coverage and contracts; make Logger/Tracer implementation preference-based, with lazy references and native SDKs as the default.
+- Replace mandatory provider-response preservation, unlimited stack/cause traversal, recursive sanitizer, base64 multipart logs and manifests with safe, bounded incident fields and exact observed HTTP status/provider codes.
+- Prefer Powertools handler/dependency tracing APIs over manual X-Ray lifecycle; retain safe capture settings, metrics, trace sampling and cross-service verification.
+- Update TypeScript/Python examples, focused tests, review guidance, language references, and consumer documentation. Root OTel behavior is unchanged.
+
 
 ### Changed
 
