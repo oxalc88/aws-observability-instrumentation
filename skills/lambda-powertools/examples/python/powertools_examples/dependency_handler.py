@@ -1,10 +1,5 @@
-"""Caller metrics, safe manual Powertools traces and terminal diagnostics.
-
-Same contract as TypeScript; botocore RetryAttempts excludes the initial attempt.
-Do not also auto-patch botocore or use a second trace/metric publication owner.
-"""
+"""Powertools dependency example: unchanged metrics, direct Logger, native tracing."""
 import os
-from contextlib import contextmanager
 from time import perf_counter
 
 import boto3
@@ -13,7 +8,6 @@ from aws_lambda_powertools.metrics import EphemeralMetrics, MetricUnit
 from botocore.exceptions import ReadTimeoutError
 
 from .metric_publication import publish_measurements
-from .diagnostic_evidence import UNAVAILABLE, diagnostic_evidence, emit_diagnostic
 
 os.environ["POWERTOOLS_TRACER_CAPTURE_RESPONSE"] = "false"
 os.environ["POWERTOOLS_TRACER_CAPTURE_ERROR"] = "false"
@@ -21,37 +15,6 @@ tracer = Tracer(service="orders", auto_patch=False)
 logger = Logger(service="orders", level="INFO")
 metrics = EphemeralMetrics(namespace="Example/OrderLookup", service="orders")
 client = boto3.client("dynamodb", region_name=os.getenv("AWS_REGION", "us-east-1"))
-
-
-@contextmanager
-def safe_subsegment(name):
-    parent = segment = None
-    try:
-        if not tracer.disabled:
-            parent = tracer.provider.get_trace_entity()
-            segment = tracer.provider.begin_subsegment(name)
-    except Exception:
-        pass
-    try:
-        yield
-    except Exception:
-        try:
-            if segment is not None:
-                segment.add_fault_flag()
-        except Exception:
-            pass
-        raise
-    finally:
-        try:
-            if segment is not None:
-                tracer.provider.end_subsegment()
-        except Exception:
-            pass
-        try:
-            if parent is not None:
-                tracer.provider.set_trace_entity(parent)
-        except Exception:
-            pass
 
 
 def safe_response(value):
@@ -64,16 +27,10 @@ def safe_response(value):
 
 def response_field(error, section, field):
     try:
-        return safe_response(error).get(section, {}).get(field)
+        part = safe_response(error).get(section)
+        return part.get(field) if isinstance(part, dict) else None
     except Exception:
         return None
-
-
-def error_response(error):
-    try:
-        return getattr(error, "response", UNAVAILABLE)
-    except Exception:
-        return UNAVAILABLE
 
 
 def sdk_attempts(value):
@@ -85,33 +42,35 @@ def sdk_attempts(value):
 
 
 def dependency_evidence(error):
-    try:
-        response = safe_response(error)
-        code = response.get("Error", {}).get("Code")
-        status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-    except Exception:
-        code = status = None
+    code = response_field(error, "Error", "Code")
+    status = response_field(error, "ResponseMetadata", "HTTPStatusCode")
     failure_class = "timeout" if isinstance(error, (TimeoutError, ReadTimeoutError)) else (
         "rate_limited" if code in ("ThrottlingException", "ProvisionedThroughputExceededException") else "unknown"
+    )
+    safe_code = code if type(code) is int else (
+        code if isinstance(code, str) and len(code) <= 80
+        and code[:1].isalpha() and all(c.isalnum() or c in "_.-" for c in code) else None
     )
     return {
         "failure.class": failure_class,
         "reason": {"timeout": "deadline_exceeded", "rate_limited": "dependency_throttled"}.get(
             failure_class, "unmapped_dependency_failure"),
-        "http.status_class": f"{status // 100}xx" if type(status) is int and 400 <= status < 600 else "unknown",
+        **({"http.status_code": status, "http.status_class": f"{status // 100}xx"}
+           if type(status) is int and 100 <= status <= 599 else {}),
+        **({"provider.error_code": safe_code} if safe_code is not None else {}),
     }
 
 
+@tracer.capture_method(capture_response=False, capture_error=False)
 def lookup_order(order_id):
     started = perf_counter()
     failure_class, attempts = "none", None
     try:
-        with safe_subsegment("DynamoDB.GetItem"):
-            response = client.get_item(
-                TableName=os.getenv("ORDERS_TABLE", "orders"), Key={"id": {"S": order_id}},
-            )
-            attempts = sdk_attempts(response)
-            return response
+        response = client.get_item(
+            TableName=os.getenv("ORDERS_TABLE", "orders"), Key={"id": {"S": order_id}},
+        )
+        attempts = sdk_attempts(response)
+        return response
     except Exception as error:
         failure_class = dependency_evidence(error)["failure.class"]
         attempts = sdk_attempts(error)
@@ -135,30 +94,21 @@ def lambda_handler(event, context):
         return {"found": "Item" in response}
     except Exception as error:
         try:
-            evidence = diagnostic_evidence(
-                error, http_status=response_field(error, "ResponseMetadata", "HTTPStatusCode"),
-                provider_code=response_field(error, "Error", "Code"),
-                provider_message=response_field(error, "Error", "Message"),
-                provider_response=error_response(error),
-            )
-            emit_diagnostic(logger, "Order lookup failed", {
-                "event.name": "order.dependency.failed", "operation.name": "order.lookup",
-                "stage": "lookup", "dependency.name": "dynamodb", "dependency.operation": "GetItem",
+            logger.error("Order lookup failed", extra={
+                "event.name": "order.dependency.failed",
+                "operation.name": "order.lookup",
+                "stage": "lookup",
+                "dependency.name": "dynamodb",
+                "dependency.operation": "GetItem",
                 **dependency_evidence(error),
-                "retry.decision": "propagate", "retry.reason": "caller_owned_policy",
+                "retry.decision": "propagate",
                 "request_id": context.aws_request_id,
-            }, evidence)
+            })
         except Exception:
             pass
-        # Preserve exception identity and causes. The outward response boundary
-        # must separately control public messages and platform error-output risks.
         raise
 
 
+@tracer.capture_lambda_handler(capture_response=False, capture_error=False)
 def handler(event, context):
-    with safe_subsegment("Lambda.OrderLookup"):
-        return lambda_handler(event, context)
-
-# Deployment: Active tracing, X-Ray role permissions, finite retention. Python's
-# disable flag is POWERTOOLS_TRACE_DISABLED=true (not TypeScript's enabled flag).
-# One shared Tracer configured before any auto-patching import; verify continuity.
+    return lambda_handler(event, context)
