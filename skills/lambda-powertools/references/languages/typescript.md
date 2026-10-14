@@ -14,7 +14,7 @@ Use Powertools Logger directly with explicit safe fields; the example logs stabl
 
 ## Tracer
 
-Prefer built-in `captureLambdaHandler` middleware and reviewed `captureAWSv3Client` SDK capture when supported; each boundary has one owner. Disable response and full-error capture with `POWERTOOLS_TRACER_CAPTURE_RESPONSE=false` and `POWERTOOLS_TRACER_CAPTURE_ERROR=false` and the matching middleware options. These flags do not automatically sanitize SDK instrumentation; review the actual captured attributes. Avoid broad HTTP capture with sensitive URLs. Use manual X-Ray segments only when native instrumentation cannot answer a proven operational question. TypeScript's disable switch is `POWERTOOLS_TRACE_ENABLED=false`. See [tracing](../tracing.md).
+Prefer built-in `captureLambdaHandler` middleware and reviewed `captureAWSv3Client` SDK capture when supported; each boundary has one owner. Disable response and full-error capture with `POWERTOOLS_TRACER_CAPTURE_RESPONSE=false` and `POWERTOOLS_TRACER_CAPTURE_ERROR=false` and supported middleware options (response only in the pinned TypeScript SDK; the error switch is environment-based). These flags do not automatically sanitize SDK instrumentation; review the actual captured attributes. Avoid broad HTTP capture with sensitive URLs. Use manual X-Ray segments only when native instrumentation cannot answer a proven operational question. TypeScript's disable switch is `POWERTOOLS_TRACE_ENABLED=false`. See [tracing](../tracing.md).
 
 AWS SDK v3 `$metadata.attempts` includes the initial attempt. Use actual metadata; report absent/invalid evidence instead of inventing counts. The fixed public error in the example is illustrative application policy; retain consumer behavior when adapting.
 

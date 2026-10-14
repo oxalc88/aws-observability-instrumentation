@@ -14,7 +14,7 @@ Trace **when an execution path or dependency duration is operationally useful**.
 - Verify deployment activation, X-Ray permissions, sampling and the runtime's effective capture configuration. If continuity is unsupported, document the gap; correlation logs remain useful but are not equivalent traces.
 - Tracing must not change business results, retries or acknowledgments. Prefer SDK lifecycle management; test error behavior and cold/warm invocations.
 
-TypeScript: use reviewed `captureLambdaHandler` middleware and `captureAWSv3Client` when supported. Disable unwanted response/error capture in options and environment.
+TypeScript: use reviewed `captureLambdaHandler` middleware and `captureAWSv3Client` when supported. Disable response capture in supported middleware options, and disable error capture through the effective environment setting.
 
 Python: prefer `capture_lambda_handler` and `capture_method` with `capture_response=False` and `capture_error=False`. Avoid manual X-Ray provider management for ordinary dependencies.
 
