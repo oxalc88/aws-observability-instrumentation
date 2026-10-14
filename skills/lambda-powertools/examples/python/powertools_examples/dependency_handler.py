@@ -49,7 +49,7 @@ def dependency_evidence(error):
     )
     safe_code = code if type(code) is int else (
         code if isinstance(code, str) and len(code) <= 80
-        and code[:1].isalpha() and all(c.isalnum() or c in "_.-" for c in code) else None
+        and code[:1].isalnum() and all(c.isalnum() or c in "_.-" for c in code) else None
     )
     return {
         "failure.class": failure_class,

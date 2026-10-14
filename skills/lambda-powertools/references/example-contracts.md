@@ -36,7 +36,7 @@ Buffered counts reduce log records; they do not remove series cost. BatchDuratio
 
 ## Diagnostic and trace ownership
 
-Rejection helper emits one safe validation event; request wrapper owns unexpected internal failure. Batch wrapper emits one terminal event with safe location and invocation ID; harmless local fallback needs no per-record narrative log. DynamoDB caller wrapper records metrics and a manual timed subsegment; Lambda boundary emits one safe failure event and owns a best-effort handler segment with independent close/context restoration. Do not add another SDK capture owner, response/error dump, or helper subsegment.
+Rejection helper emits one safe validation event; request wrapper owns unexpected internal failure. Batch wrapper emits one terminal event with safe location and invocation ID; harmless local fallback needs no per-record narrative log. DynamoDB caller records the unchanged aggregate metrics while native Powertools instrumentation traces the selected dependency. The Lambda boundary emits one safe failure log. Do not add manual segments, a second capture owner, provider-response dumps, or helper narration.
 
 Classify unknown provider exceptions as `unknown`, not arbitrary exception names. The unknown series supplies investigation coverage without another duplicate metric. Consumer typed mappings can add declared bounded categories with a reviewed cardinality/identity migration.
 

@@ -29,7 +29,7 @@ function observedError(error: unknown) {
   // Allow only the SDK's documented code-like field; never free-text messages.
   const safeCode = typeof code === "number" && Number.isSafeInteger(code)
     ? code
-    : typeof code === "string" && /^[A-Za-z][A-Za-z0-9_.-]{0,79}$/.test(code) ? code : undefined;
+    : typeof code === "string" && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(code) ? code : undefined;
   return {
     ...(typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599
       ? { "http.status_code": status, "http.status_class": `${Math.floor(status / 100)}xx` }

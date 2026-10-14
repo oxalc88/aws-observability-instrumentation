@@ -35,7 +35,7 @@ Keep this skill in a separate clone instead of nesting its Git repository inside
 
 ### Pin a version
 
-Check out a release tag that contains the selected skill before running the installer. The Powertools profile declares its skill version in frontmatter; the root changelog tracks repository releases. Version 0.2.0 updates the Powertools policy; a tag is only available after it is published. The historical `v0.1.0` example below contains the root OTel skill; use a release containing `skills/lambda-powertools/` for the new profile:
+Check out a release tag that contains the selected skill before running the installer. The Powertools profile declares its skill version in frontmatter; the root changelog tracks repository releases. The candidate Powertools 0.2.0 version is recorded in its skill frontmatter and changelog; a release tag is only available when published. The historical `v0.1.0` example below contains the root OTel skill; use a release containing `skills/lambda-powertools/` for the new profile:
 
 ```bash
 git clone https://github.com/oxalc88/aws-observability-instrumentation.git
@@ -105,9 +105,9 @@ The [surface baseline](skills/lambda-powertools/references/lambda-surfaces.md) p
 
 [Canonical contracts](skills/lambda-powertools/references/example-contracts.md) define names, units, purpose, bounded dimensions, owners, ratios, publication budgets and limitations. Local validation/batch examples explicitly mark tracing non-applicable; a real distributed consumer must assess transport continuity and queue/ack coverage. Useful dependency/distributed tracing is prescribed without waiting for user preferences.
 
-Tracing is useful for a Lambda execution timeline with DynamoDB, S3, or other meaningful dependency calls. It requires Lambda active tracing, X-Ray permissions, and handler/dependency instrumentation; only sampled invocations are recorded. See [when tracing is activated](skills/lambda-powertools/references/tracing.md#when-tracing-is-activated). The installer does not enable tracing in AWS.
+Tracing is useful for a Lambda execution timeline with DynamoDB, S3, or other meaningful dependency calls. It requires Lambda active tracing, X-Ray permissions, and handler/dependency instrumentation; only sampled invocations are recorded. See [tracing guidance](skills/lambda-powertools/references/tracing.md). The installer does not enable tracing in AWS.
 
-The snippets demonstrate instrumentation boundaries; they are not a complete order application. Copy only the selected example and relevant contract. The batch counts attempts, not exactly-once business operations. The dependency example uses a manual meaningful subsegment to avoid unrestricted SDK capture, with automatic HTTP/response/error capture disabled; its fixed public error policy is illustrative, and consumer retry/error semantics must be retained.
+The snippets demonstrate instrumentation boundaries; they are not a complete order application. Copy only the selected example and relevant contract. The batch counts attempts, not exactly-once business operations. The dependency examples use native Powertools tracing (TypeScript middleware and reviewed SDK client capture; Python decorators). Automatic response/error capture is disabled; independent SDK metadata capture still needs a privacy review in each deployment. They preserve consumer error and retry behavior.
 
 ```bash
 python3 scripts/test_install.py
