@@ -10,13 +10,11 @@ In the pinned SDK, `clear_metrics()` resets metric, temporary dimension, dimensi
 
 ## Logger
 
-Use Logger directly with safe `extra` fields. Never use uncontrolled `logger.exception`, `exc_info`, raw exception objects, payload dumps or unsafe field spreads. Explicitly extract sanitized exception messages, complete available traceback and all `__cause__`/`__context__` details, with omission/redaction/truncation markers. Preserve the original error with bare `raise` or a causal `raise ... from error` when wrapping. See [error evidence](../error-evidence.md). Pass invocation/record fields directly; the examples do not mutate persistent keys or decorate handlers to log invocation events. If using `inject_lambda_context`, disable `log_event` and use appropriate `clear_state`; keep `POWERTOOLS_LOGGER_LOG_EVENT=false` and inspect overrides. Python's WARN method is `warning`; required events must survive deployed levels.
+Use Logger directly with reviewed safe `extra` fields. Never log arbitrary exceptions with unchecked `exc_info`/`logger.exception`, unknown response bodies, payloads or sensitive values. Preserve the original exception with bare `raise`; use stable error codes/status and operation context for diagnostics. `inject_lambda_context(log_event=False)` may supply invocation context; avoid persistent per-record keys. See [logging](../logging.md).
 
 ## Tracer and botocore
 
-Python's disable switch is `POWERTOOLS_TRACE_DISABLED=true`, unlike TypeScript's enabled switch. Tracer normally auto-patches supported libraries. Configure one shared Tracer before imports/initialization that might establish a different global capture owner. The examples use `Tracer(auto_patch=False)` and manual provider subsegments to prevent broad SDK/HTTP capture. Do not combine these with botocore patching or another decorator at the same boundary.
-
-If using capture decorators, disable response and error capture (`capture_response=False`, `capture_error=False`) and inspect effective environment settings (`POWERTOOLS_TRACER_CAPTURE_RESPONSE=false`, `POWERTOOLS_TRACER_CAPTURE_ERROR=false`). Decorator flags do not sanitize independent SDK capture. Manual context managers must not automatically serialize exceptions; the example guards begin/end/status/context restoration and uses a fault flag without raw exception metadata.
+Prefer `capture_lambda_handler(capture_response=False, capture_error=False)` and `capture_method(capture_response=False, capture_error=False)` over manual X-Ray provider segments. Review auto-patched botocore capture separately; this example uses `auto_patch=False` and one explicit dependency method. Set `POWERTOOLS_TRACER_CAPTURE_RESPONSE=false` and `POWERTOOLS_TRACER_CAPTURE_ERROR=false`. Python's disable switch is `POWERTOOLS_TRACE_DISABLED=true`. A failed trace must not change the business error/response. See [tracing](../tracing.md).
 
 Botocore `ResponseMetadata.RetryAttempts` counts retries, excluding the first attempt. Convert actual observed metadata to attempts by adding one; invalid/absent evidence increments MissingAttemptEvidence. Do not equate this with queue redelivery or application retry exhaustion.
 

@@ -1,60 +1,39 @@
 ---
 name: lambda-powertools
-description: Apply prescribed operational coverage for AWS Lambda across languages using CloudWatch and AWS Lambda Powertools Logger, Metrics (EMF), and Tracer. Use when adding or reviewing request, dependency, workflow, queue/batch, retry, fallback, resource, diagnostic logging, or distributed tracing instrumentation. Preserve Sentry-style required surface measurements; reuse proven equivalent AWS telemetry, fill gaps, and record exceptions. Excludes generic OTel architecture, non-Lambda platforms, E2E frameworks, and test generation.
+description: >-
+  Apply AWS Lambda Powertools Logger, Metrics (EMF), and Tracer with useful
+  operational coverage and minimal implementation complexity. Use for Lambda
+  request, dependency, workflow, queue, retry, fallback, and failure observability.
+  Excludes generic OTel architecture and non-Lambda workloads.
+metadata:
+  version: "0.2.0"
 ---
 
 # Lambda Powertools
 
-Start with an operational question. Apply required coverage at applicable boundaries; add the minimum telemetry that fulfills it safely and within budget. Do not scatter Logger + Metrics + Tracer across helpers.
+**Goal:** Make failures diagnosable and behavior measurable with the least necessary code.
+This is a set of implementation preferences, not a framework or recipe.
 
-## Coverage before coding
+## Decisions
 
-```mermaid
-flowchart TD
-    S["Applicable operational surface"] --> Q["Prescribed questions"]
-    Q --> M["Metrics: aggregate behavior"]
-    Q --> L["Logs: material outcome diagnosis"]
-    Q --> T["Traces: dependency and distributed path"]
-    M --> C["Prove existing coverage or fill gaps"]
-    L --> C
-    T --> C
-```
+- Start with the operational question. Inspect existing telemetry and its owner before writing code.
+- Keep required **metric coverage** for applicable surfaces. Reuse equivalent managed AWS metrics; otherwise implement missing aggregate counts, durations, and resource/correctness measures. Preserve the five metric purposes, dimension budgets, semantics, one publication owner, and warm-state cleanup. Read [surface coverage](references/lambda-surfaces.md), [metrics](references/metrics.md), and [signal selection](references/signal-selection.md).
+- Emit one useful, safe **failure log** at the owner of each material failure, rejection, degradation, or security decision. Include operation, stage, specific safe reason/rule, location or dependency, correlation, and observed status/code where available. Use Powertools Logger directly. Read [logging](references/logging.md); consult [diagnostic sufficiency](references/diagnostic-sufficiency.md) for category-specific fields.
+- Trace meaningful **dependencies and distributed paths** where a trace can answer a timing/causality question. Prefer supported Powertools middleware, decorators, and reviewed SDK instrumentation. Avoid duplicate capture and manual segment lifecycle unless a proven gap justifies it. Read [tracing](references/tracing.md).
+- Keep received facts, failure classification, and the application's existing retry decision separate. Never change business results or retry/ack behavior for instrumentation.
+- Never emit raw requests, events, headers, credentials, tokens, successful authentication payloads, unreviewed error/response objects, or personal data. Do not enable unchecked automatic response/error capture.
+- Prefer subtraction: remove redundant logs, layers, custom serializers, emitters, segments, and shared mutable state before adding code. No custom diagnostic multipart protocol or cause-chain crawler by default.
+- Keep Lambda Powertools independent of the root OpenTelemetry skill.
 
-Evaluate all signals together; order here is not implementation priority. Metrics are primary for aggregate monitoring/alerts. Logs and sampled traces cannot replace metric coverage. Required measurements do not imply custom metrics when AWS/application equivalents already exist.
+## Route only when relevant
 
-1. Detect the handler language/runtime from entry points, deployment and manifests. Apply this shared contract in any language; load [language adaptation](references/language-adaptation.md) and the matching SDK reference. TypeScript/Python are tested examples, not an allowlist. Inspect Lambda triggers, dependencies, stages, retries/acks, fallback/resource use, existing emitters, deployment, and Powertools versions. Apply [required surface coverage](references/lambda-surfaces.md) even when the user has no preference.
-2. Record each requirement as `managed`, `custom`, `not_applicable`, or `exception`, with question, owner, evidence, semantics and cost. Prove existing equivalence; report gaps with mitigation, owner and review date. Unknown requires assessment, not silent opt-out. Read [signal selection](references/signal-selection.md).
-3. Define custom metrics once: fixed name/unit, exactly one purpose (`outcome`, `latency`, `load`, `resource`, `correctness`), population, boundary, statistic/denominator, bounded dimensions, frequency, sampling and budget. Version meaning changes. Read [metrics](references/metrics.md) and [canonical contracts](references/example-contracts.md).
-4. Require one safe diagnostic event for each material failure/rejection/degradation/security outcome. Use its category contract, not generic `invalid_input`. Read [logging](references/logging.md), [diagnostic sufficiency](references/diagnostic-sufficiency.md), and [failure taxonomy](references/failure-taxonomy.md).
-5. Require tracing of meaningful dependencies and distributed paths. Record enabled/disabled and coverage state; reuse an existing owner, or document non-applicability/exception. Verify activation, permissions, sampling, capture safety and supported handoffs. Read [tracing](references/tracing.md).
-6. Extend reusable boundary patterns with Powertools directly. Keep one emission owner, aggregate loops, preserve latency samples, clear warm state and contain telemetry failures. Do not import the root OTel runtime or create a competing logger/framework.
-7. Budget metric series + EMF/log volume + trace volume + maintenance. Reduce duplicates/dimensions/publications before exceptions. Read [cost and noise](references/cost-and-noise.md).
-8. Apply [review rubric](references/review-rubric.md) and [enforcement](references/enforcement.md). Report covered requirements and unresolved gaps. Do not claim unverified managed equivalence or trace continuity.
-
-## Hard rules
-
-- Never emit raw requests/events/headers, successful authentication responses, credentials/tokens, unchecked error objects, or sensitive data. At material failures preserve exact HTTP status, the sanitized provider error response including unknown fields/JSON/arrays/scalars/text and numeric/textual codes, and the complete available original exception stack and cause stacks. Do not require a provider catalog or impose arbitrary message/stack cuts or cause-count caps. Declare redactions, unavailable evidence and loss; split oversized evidence into ordered correlated WARN/ERROR parts through the same Powertools Logger route. Separate received evidence, internal classification and existing retry decision. Read [error evidence](references/error-evidence.md).
-- No helper-step narrative INFO, helper metrics/subsegments, duplicate terminal logs, SDK/manual subsegments, or publication owners. Meaningful workflow transitions with an operator reconstruction use case may emit bounded INFO.
-- Keep exact outcome/resource totals unsampled. A duration total is not a latency distribution. A processed record is not an acknowledged message or unique business event.
-- Keep business results/retries intact when telemetry fails; hard timeouts can bypass cleanup. Retain managed platform coverage and verify sustained telemetry loss separately.
-- Keep this contract separate from root `cloudwatch-instrumentation`: classic EMF metrics and X-Ray-backed Powertools Tracer, not root OTel/OTLP requirements.
-
-## Load on demand
-
-| Need | Read |
+| Need | Reference |
 | --- | --- |
-| Language detection, other-language ports and SDK gaps | [language adaptation](references/language-adaptation.md) |
-| Node.js API/lifecycle/capture details | [TypeScript/JavaScript](references/languages/typescript.md) |
-| Python API/lifecycle/capture details | [Python](references/languages/python.md) |
-| Scope, Sentry preservation and AWS adaptation | [charter](references/charter.md) |
-| Required measurements/events/paths | [Lambda surfaces](references/lambda-surfaces.md) |
-| Coverage states, equivalence and exceptions | [signal selection](references/signal-selection.md) |
-| Metric definitions, lifecycle, publication | [metrics](references/metrics.md), [example contracts](references/example-contracts.md) |
-| Safe diagnostic logging | [logging](references/logging.md), [diagnostic sufficiency](references/diagnostic-sufficiency.md), [error evidence](references/error-evidence.md), [failure taxonomy](references/failure-taxonomy.md) |
-| Dependency/distributed tracing and activation | [tracing](references/tracing.md) |
-| Cost, review and checks | [cost/noise](references/cost-and-noise.md), [review](references/review-rubric.md), [enforcement](references/enforcement.md) |
-| Request metrics + validation diagnostics; tracing not applicable | [validation-handler.ts](examples/typescript/src/validation-handler.ts) |
-| Batch outcome/duration/fallback metrics + terminal diagnostics | [batch-metrics.ts](examples/typescript/src/batch-metrics.ts) |
-| Dependency metrics + meaningful trace + terminal diagnostics | [dependency-handler.ts](examples/typescript/src/dependency-handler.ts) |
+| Metric requirements and exact measurement contracts | [Metrics](references/metrics.md), [surface coverage](references/lambda-surfaces.md), [example contracts](references/example-contracts.md) |
+| Failure investigation and safe fields | [Logging](references/logging.md), [diagnostic sufficiency](references/diagnostic-sufficiency.md) |
+| Untrusted provider errors | [Error handling](references/error-evidence.md) |
+| Dependency or distributed tracing | [Tracing](references/tracing.md) |
+| SDK-specific APIs | [Language adaptation](references/language-adaptation.md) and selected language reference |
+| Review, cost, coverage exceptions | [Review](references/review-rubric.md), [enforcement](references/enforcement.md), [cost](references/cost-and-noise.md) |
 
-Python equivalents: [validation_handler.py](examples/python/powertools_examples/validation_handler.py), [batch_metrics.py](examples/python/powertools_examples/batch_metrics.py), [dependency_handler.py](examples/python/powertools_examples/dependency_handler.py). Load only the implementation matching the handler.
+Load only references needed for the change. Examples are behavior illustrations, not required architecture. Use official Powertools documentation for SDK APIs and defaults. Test observable results rather than copying example internals.

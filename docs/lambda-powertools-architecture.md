@@ -73,13 +73,13 @@ Before any installation write, check known project and ancestor discovery surfac
 
 ## Verification and limits
 
-Repository checks cover selected-profile isolation, defaults, idempotence, legacy concatenation detection, marker safety, and preservation of local instructions. Powertools examples are type-checked and exercise diagnostic fields/privacy, one EMF publication per batch, warm cleanup, aggregation, sink/publication failure containment, and meaningful dependency trace cleanup. Root TypeScript/Python checks remain unchanged in scope.
+Repository checks cover selected-profile isolation, defaults, idempotence, legacy concatenation detection, marker safety, and preservation of local instructions. Powertools examples are type-checked and exercise diagnostic fields/privacy, one EMF publication per batch, warm cleanup, aggregation, sink/publication failure containment, and native dependency tracing and safe capture settings. Root TypeScript/Python checks remain unchanged in scope.
 
 The example checks verify request acceptance/rejection coverage, caller-specific dependency failure/throttle/timing, batch stage/record/fallback totals, safe diagnostics, warm-state cleanup and SDK/sink failure containment. Required surface coverage and managed equivalence are review obligations; the focused tests do not prove every consumer surface is instrumented.
 
 Local checks do not prove EMF extraction, IAM, Lambda active tracing, trace sampling, or continuity through SQS/SNS/EventBridge. Verify those during the consumer's non-production rollout. A correlation ID is not a trace parent, and a batch can contain multiple producer contexts.
 
-Powertools' full-error capture flag does not govern independent SDK instrumentation. The tracing example uses manual meaningful handler/dependency subsegments with independent best-effort cleanup, disables automatic HTTP/response/error capture, and avoids duplicate SDK capture. Consumers that choose SDK capture must review its data separately. The example's fixed application error policy avoids raw runtime error text; consumer business/retry semantics remain the consumer's responsibility.
+Powertools' full-error capture flag does not govern independent SDK instrumentation. The examples prefer native Powertools tracer middleware/decorators and one reviewed dependency owner, rather than managing X-Ray segments manually. Response and error capture are disabled, but independent SDK instrumentation still needs deployment-specific privacy review. They preserve original business errors and retry policy; uncaught Lambda runtime errors need their own privacy review.
 
 No E2E framework, user-story automation, test-generation system, non-Lambda platform, or application feature is introduced.
 
